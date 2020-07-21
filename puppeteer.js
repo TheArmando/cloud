@@ -4,6 +4,7 @@ const fs = require('fs');
 
 // const nock = require('nock')
 const got = require('got');
+const { exit } = require('process');
 
 const AWS_SIGNIN_URL = "https://www.amazon.com/ap/signin";
 const INPUT_DELAY_IN_MILLISECONDS = 475;
@@ -17,11 +18,29 @@ const sleep = (millis) => {
 // const delayTime = () => { return 1; }
 const delayTime = () => { return Math.floor(Math.random() * INPUT_DELAY_IN_MILLISECONDS); }
 
-let username = ""
-let password = ""
+let username = '';
+let password = '';
 
 const isAtLoginScreen = (page) => { return page.url().startsWith('https://www.amazon.com/ap/signin'); }
 const isAtPhotosScreen = (page) => { return page.url().startsWith('https://www.amazon.com/photos/all'); }
+
+// TODO: DRY this up its fucking garbage
+const loadCredentials = () => {
+  if (fs.existsSync("./secretsauce/credentials.json")) {
+    const data = JSON.parse(fs.readFileSync('./secretsauce/credentials.json', { encoding: 'utf8' }));
+    username = data.username;
+    password = data.password;
+    if (!username || !password) {
+      console.log('No credentials found - set credentials and rerun the application');
+      exit(1);
+    }
+  } else {
+    const data = JSON.stringify({ username: "", password: ""});
+    fs.writeFileSync("./secretsauce/credentials.json", data);
+    console.log('No credentials found - set credentials and rerun the application');
+    exit(1);
+  }
+}
 
 const login = async (page, username, password) => {
   if (isAtLoginScreen(page)) {
@@ -207,6 +226,7 @@ const setupLoggingOfAllNetworkData = async (page) => {
 }
 
 const main = async () => {
+  loadCredentials();
   // TODO: If the cookies don't exist or have expired then launch normally, if not headless mode should work fine
   const browser = await puppeteer.launch({
     headless: false,
