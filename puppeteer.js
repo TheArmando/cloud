@@ -5,6 +5,7 @@ const fs = require('fs');
 // const nock = require('nock')
 const got = require('got');
 const { exit } = require('process');
+const { time } = require('console');
 
 const AWS_SIGNIN_URL = "https://www.amazon.com/ap/signin";
 const INPUT_DELAY_IN_MILLISECONDS = 475;
