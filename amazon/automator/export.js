@@ -6,5 +6,5 @@ module.exports = {
   // ...require('../api/download.js'),
   ...require('./login.js'),
   // ...require('../api/metadata.js'),
-  ...require('./upload.js')
+  ...require('./upload.js'),
 };
