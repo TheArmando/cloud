@@ -1,6 +1,7 @@
 /node_modules
-/secretsauce/*
-captured-requests.json
-all-metadata.json
+headers.json
+cookies.json
+credentials.json
+dev-*
 .*
 !/.gitignore

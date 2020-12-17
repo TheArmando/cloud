@@ -7,8 +7,15 @@ const got = require('got');
 const { exit } = require('process');
 const { time } = require('console');
 
-const AWS_SIGNIN_URL = 'https://www.amazon.com/ap/signin';
-const INPUT_DELAY_IN_MILLISECONDS = 475;
+const AMAZON_SIGNIN_URL = 'https://www.amazon.com/ap/signin';
+const AMAZON_PHOTOS_URL = 'https://www.amazon.com/photos/all';
+const INPUT_DELAY_IN_MILLISECONDS = 50;
+
+const COOKIES_FILENAME = 'cookies.json';
+const CREDENTIALS_FILENAME = 'credentials.json'
+
+const CAPTURED_REQS_FILENAME = 'dev-captured-requests.json'
+const SCREENSHOT_FILENAME = 'dev-screenshot.png';
 
 const sleep = (millis) => new Promise((resolve) => setTimeout(resolve, millis));
 
@@ -20,13 +27,13 @@ const delayTime = () => Math.floor(Math.random() * INPUT_DELAY_IN_MILLISECONDS);
 let username = '';
 let password = '';
 
-const isAtLoginScreen = (page) => page.url().startsWith('https://www.amazon.com/ap/signin');
-const isAtPhotosScreen = (page) => page.url().startsWith('https://www.amazon.com/photos/all');
+const isAtLoginScreen = (page) => page.url().startsWith(AMAZON_SIGNIN_URL);
+const isAtPhotosScreen = (page) => page.url().startsWith(AMAZON_PHOTOS_URL);
 
 // TODO: DRY this up its fucking garbage
 const loadCredentials = () => {
-  if (fs.existsSync('./secretsauce/credentials.json')) {
-    const data = JSON.parse(fs.readFileSync('./secretsauce/credentials.json', { encoding: 'utf8' }));
+  if (fs.existsSync('./' + CREDENTIALS_FILENAME)) {
+    const data = JSON.parse(fs.readFileSync('./' + CREDENTIALS_FILENAME, { encoding: 'utf8' }));
     username = data.username;
     password = data.password;
     if (!username || !password) {
@@ -35,7 +42,7 @@ const loadCredentials = () => {
     }
   } else {
     const data = JSON.stringify({ username: '', password: '' });
-    fs.writeFileSync('./secretsauce/credentials.json', data);
+    fs.writeFileSync('./' + CREDENTIALS_FILENAME, data);
     console.log('No credentials found - set credentials and rerun the application');
     exit(1);
   }
@@ -54,10 +61,33 @@ const login = async (page, username, password) => {
     console.log('Waiting for Login to complete...');
     // delete this
     await sleep(2000);
-    await page.screenshot({ path: 'example.png' });
+    await page.screenshot({ path: './' + SCREENSHOT_FILENAME });
 
     let waitTimer = 0;
     while (!isAtPhotosScreen(page)) {
+      if (waitTimer == -1) {
+        await sleep(100);
+        continue; // quick and dirty way to prevent stdout spam
+      }
+      // TODO: refactor into function that parses error messages from the page elements
+      let warningBox = await page.$('#auth-warning-message-box')
+      if (warningBox != null) {
+        console.log('\tWarning detected...')
+        warningMessage = await warningBox.$('.a-list-item')
+        // TODO: When capture the captcha image so the browser can run in headless mode
+        if (warningMessage.evaluate(node => node.innerText.startsWith('To better protect your account, please re-enter your password'))) {
+          console.log('\t\tCaptcha challenge required...')
+        } else {
+          console.log('\t\tNot sure what the issue is')
+        }
+        console.log('\t\tWaiting for manual override')
+        waitTimer = -1; // Reset wait timer and infinitely wait for user to take the wheel
+        continue;
+      }
+      let alertBox = await page.$('#auth-error-message-box')
+      if (alertBox != null) {
+        console.log('\tError detected...')
+      }
       await sleep(100);
       waitTimer++;
       if (waitTimer == 100) {
@@ -85,7 +115,7 @@ const login = async (page, username, password) => {
   // await shouldQuit = reader.question()
 };
 
-const uploadPage = async (page) => {
+const uploadPage = async (page, filepath) => {
   console.log('Starting upload routine');
   await Promise.all([
     page.click('.toggle', { delay: delayTime() }),
@@ -101,7 +131,7 @@ const uploadPage = async (page) => {
     page.click('.upload-files-link', { delay: delayTime() }),
   ]);
 
-  await fileChooser.accept(['./MASTERING_GO.pdf-0.png']);
+  await fileChooser.accept([filepath]);
 
   console.log('I clicked on the upload button');
   // TODO: Still need to figure out how to wait for the upload to finish.
@@ -223,20 +253,13 @@ const setupLoggingOfAllNetworkData = async (page) => {
   return cdpRequestDataRaw;
 };
 
-const main = async () => {
-  loadCredentials();
-  // TODO: If the cookies don't exist or have expired then launch normally, if not headless mode should work fine
-  const browser = await puppeteer.launch({
-    headless: false,
-    defaultViewport: null,
-  });
-
+const setupPage = async (browser) => {
   // const page = await browser.newPage();
   const pages = await browser.pages();
   const page = pages[0];
 
   try {
-    const cookies = JSON.parse(fs.readFileSync('./cookie.json'));
+    const cookies = JSON.parse(fs.readFileSync('./' + COOKIES_FILENAME));
     for (const cookie of cookies) { // setting the cookies individually seems to make puppeteer happy
       page.setCookie(cookie);
     }
@@ -244,7 +267,7 @@ const main = async () => {
     console.log(error);
   }
 
-  // Setup request interception
+  // Setup request interception TODO: since this is only useful for dev purposes, don't call during prod
   const cdpRequestDataRaw = await setupLoggingOfAllNetworkData(page);
 
   // Setup response interception
@@ -257,11 +280,12 @@ const main = async () => {
   // });
 
   // Initiate login
-  await page.goto('https://www.amazon.com/photos/all');
+  console.log('Logging in...');
+  await page.goto(AMAZON_PHOTOS_URL);
   await login(page, username, password);
 
   // Save captured request data... for science
-  fs.writeFileSync('./captured-requests.json', JSON.stringify(cdpRequestDataRaw, null, 4));
+  fs.writeFileSync('./' + CAPTURED_REQS_FILENAME, JSON.stringify(cdpRequestDataRaw, null, 4));
 
   const headers = loadHeaders(cdpRequestDataRaw);
   console.log(JSON.stringify(headers));
@@ -269,14 +293,45 @@ const main = async () => {
 
   const gimmeTheCookies = await page.cookies();
   console.log(JSON.stringify(gimmeTheCookies));
-  fs.writeFileSync('./cookie.json', JSON.stringify(gimmeTheCookies, null, 4));
+  fs.writeFileSync('./' + COOKIES_FILENAME, JSON.stringify(gimmeTheCookies, null, 4));
+};
 
-  await uploadPage(page);
+const main = async () => {
+  const myArgs = process.argv.slice(2);
 
-  await sleep(5000); // manual sleep until I figre out how to continue once the page is done loading
+  loadCredentials();
+
+  // TODO: If the cookies don't exist or have expired then launch normally, if not headless mode should work fine
+  const browser = await puppeteer.launch({
+    headless: false,
+    defaultViewport: null,
+  });
+
+  const page = await setupPage(browser);
+  
+  switch (myArgs[0]) {
+    case 'list':
+      // TODO:
+      break;
+    case 'upload':
+      await uploadPage(page, './' + myArgs[1]); // TODO: add support for relative filepaths
+      await sleep(5000); // manual sleep until I figure out how to continue once the page is done loading
+      break;
+    case 'download':
+      // download the provided file
+      break;
+    case 'help':
+      console.log(`Here are the commands available:
+        list - to list the files that have been uploaded
+        upload [filename].png to upload a file image. To upload a file split between multiple images e.g. [filename]-3.png do not include the -3 and the app will auto upload all of the files
+        download [filename] to download a file image. To download a file that is split between multiple images e.g. [filename]-3 do not include the -3 and the app will auto download all of the files`)
+      break;
+    default:
+      console.log('Error while parsing commands use help for usage examples')
+  }
 
   await browser.close();
-};
+}
 
 // (async () => {
 //   let headers = fs.readFileSync('./headers.json');
