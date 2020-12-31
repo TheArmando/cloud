@@ -2,6 +2,7 @@
 headers.json
 cookies.json
 credentials.json
+all-metadata.json
 dev-*
 .*
 !/.gitignore
