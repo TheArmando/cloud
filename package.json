@@ -4,6 +4,7 @@
   "description": "",
   "main": "index.js",
   "dependencies": {
+    "cli-progress": "^3.8.2",
     "event-stream": "^4.0.1",
     "got": "^11.5.1",
     "jpeg-js": "^0.4.0",

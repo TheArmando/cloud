@@ -3,6 +3,8 @@ headers.json
 cookies.json
 credentials.json
 all-metadata.json
+uploads/*
+downloads/*
 dev-*
 .*
 !/.gitignore

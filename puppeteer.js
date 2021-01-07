@@ -4,15 +4,25 @@ const fs = require('fs');
 
 // const nock = require('nock')
 const got = require('got');
+const stream = require('stream');
+const {promisify} = require('util');
+const pipeline = promisify(stream.pipeline);
+const cliProgress = require('cli-progress');
+
 const { exit } = require('process');
 const { time } = require('console');
+const { stringify } = require('querystring');
 
 const AMAZON_SIGNIN_URL = 'https://www.amazon.com/ap/signin';
 const AMAZON_PHOTOS_URL = 'https://www.amazon.com/photos/all';
+// Requires the file id as $1 and owner id as $2 
+const AMAZON_DOWNLOAD_URL = 'https://www.amazon.com/drive/v1/nodes/$1/contentRedirection?querySuffix=%3Fdownload%3Dtrue&ownerId=$2';
+
 const INPUT_DELAY_IN_MILLISECONDS = 50;
 
 const COOKIES_FILENAME = 'cookies.json';
 const CREDENTIALS_FILENAME = 'credentials.json';
+const HEADERS_FILENAME = 'headers.json';
 const METADATA_FILENAME = 'all-metadata.json';
 
 const CAPTURED_REQS_FILENAME = 'dev-captured-requests.json';
@@ -54,7 +64,10 @@ const login = async (page, username, password) => {
   await page.goto(AMAZON_PHOTOS_URL);
   if (isAtLoginScreen(page)) {
     // login logic
-    await page.type('[type=email]', username, { delay: delayTime() });
+    // email box could be missing if amazon remebers the user
+    if (await page.$('[type=email') != null) {
+      await page.type('[type=email]', username, { delay: delayTime() });
+    }
     await page.type('[type=password]', password, { delay: delayTime() });
     await Promise.all([
       page.waitForNavigation(),
@@ -140,17 +153,6 @@ const uploadPage = async (page, filepath) => {
   // TODO: Still need to figure out how to wait for the upload to finish.
 };
 
-// download page
-//  "id": "GAbH6DhuT-2amcULxwk9fg",
-// "ownerId": "A1RQVN0A1VQKPI",
-// that will download the file
-// https://www.amazon.com/drive/v1/nodes/GAbH6DhuT-2amcULxwk9fg/contentRedirection?querySuffix=%3Fdownload%3Dtrue&ownerId=A1RQVN0A1VQKPI
-
-// TODO: Figure out how to do batch downloads. Also figure out if you can batch download only 1 file
-const initiateDownload = async (page) => {
-
-};
-
 const loadHeaders = (cdpRequestDataRaw) => {
   const headers = {};
   // Parse through to get some of that good headers
@@ -165,9 +167,15 @@ const loadHeaders = (cdpRequestDataRaw) => {
       }
     }
   }
-  fs.writeFileSync('./headers.json', JSON.stringify(headers, null, 4));
+  fs.writeFileSync('./' + HEADERS_FILENAME, JSON.stringify(headers, null, 4));
   return headers;
 };
+
+const loadHeadersFromFile = () => {
+  if (fs.existsSync('./' + HEADERS_FILENAME)) {
+    return JSON.parse(fs.readFileSync('./' + HEADERS_FILENAME, { encoding: 'utf8'} ));
+  }
+}
 
 const loadMetaDataFile = () => {
   if (fs.existsSync('./' + METADATA_FILENAME)) {
@@ -192,8 +200,6 @@ const getAllFileMetaData = async (headers) => {
   let page = 0;
   const data = [];
   do {
-    // const { body } = await mimicSearchRequest(page, headers);
-    // payload = JSON.parse(body);
     const payload = await mimicSearchRequest(page, headers);
     data.push(payload.data);
     numberOfFiles = payload.count;
@@ -204,36 +210,6 @@ const getAllFileMetaData = async (headers) => {
   } while (!done);
   fs.writeFileSync('./' + METADATA_FILENAME, JSON.stringify({ data, count: numberOfFiles }, null, 4));
   console.log(console.timeEnd('metadata'));
-  // Old code snippet that would scroll down to attempt to trigger all the requests
-  // way too slow... if revisiting this implementation look into using the newly added mouse.wheel function
-  // let oC = 0;
-  // while (stillRecievingFiles.well(counter)) {
-  //   if (oC != counter) {
-  //     oC = counter;
-  //     console.log(counter);
-  //   }
-  //   page.keyboard.press('PageDown');
-  //   // page.mouse.wheel({ y: 100 });
-  //   await sleep(1);
-  // }
-
-  // const stillRecievingFiles = {
-  //   currentCount: 0,
-  //   tries: 0,
-  //   well: (counter) => {
-  //     if (stillRecievingFiles.currentCount == counter) {
-  //       stillRecievingFiles.tries += 1;
-  //     } else {
-  //       stillRecievingFiles.tries = 0;
-  //     }
-  //     if (stillRecievingFiles.tries == 320 * 25) {
-  //       console.log('No change in payload number detected....')
-  //       return false;
-  //     }
-  //     stillRecievingFiles.currentCount = counter;
-  //     return true;
-  //   }
-  // };
 };
 
 const mimicSearchRequest = async (page, headers) => {
@@ -256,7 +232,53 @@ const mimicSearchRequest = async (page, headers) => {
   return resp;
 };
 
-const mimicDownloadRequest = (headers) => {};
+// TODO: Figure out how to do batch downloads. Also figure out if you can batch download only 1 file
+const initiateDownload = async (page) => {
+
+};
+
+const mimicDownloadRequest = async (headers, filename, fileId, ownerId) => {
+  // console.log('downloading ' + filename);
+  let progressBar;
+  downloadLink = generateDownloadLink(fileId, ownerId);
+  // console.log('using download link: ' + downloadLink);
+  try {
+    await pipeline(got.stream(downloadLink, {
+          headers
+        }).on('downloadProgress', progress => {
+            // Report download progress
+            if (progressBar == null) {
+              progressBar = makeProgressBar(0, progress.total);
+            }
+            progressBar.update(progress.transferred);
+            progressBar.updateETA();
+      }),
+      fs.createWriteStream('./'+filename)
+    );
+  } catch (error) {
+    console.log(error);
+  }
+  progressBar.stop();
+};
+
+// download page
+//  "id": "GAbH6DhuT-2amcULxwk9fg",
+// "ownerId": "A1RQVN0A1VQKPI",
+// that will download the file
+// https://www.amazon.com/drive/v1/nodes/GAbH6DhuT-2amcULxwk9fg/contentRedirection?querySuffix=%3Fdownload%3Dtrue&ownerId=A1RQVN0A1VQKPI
+
+const generateDownloadLink = (fileId, ownerId) => {
+  let specificDownloadUrl = AMAZON_DOWNLOAD_URL.replace('$1', fileId);
+  return specificDownloadUrl.replace('$2', ownerId);
+}
+
+const makeProgressBar = (start, max) => {
+  // create a new progress bar instance and use shades_classic theme
+  const bar = new cliProgress.SingleBar({}, cliProgress.Presets.shades_classic);
+  bar.start(max, start);
+  return bar
+}
+
 // Credit: https://stackoverflow.com/questions/47078655/missing-request-headers-in-puppeteer/62232903#62232903
 // Returns map of request ID to raw CDP request data. This will be populated as requests are made.
 // NOTE: This is not saving request/response payloads - Don't know why | may be trapped behind a function call...
@@ -331,38 +353,53 @@ const loadCookiesFromFileToPage = async (page) => {
   }
 };
 
+const findMetaDataFileWithFilename = (metadata, filename) => {
+  console.log('processing ' + metadata.count + ' files...');
+  for (const group of metadata.data) {
+    for (const file of group) {
+      if (file.name == filename) {
+        console.log('found ' + filename);
+        return file;
+      }
+    }
+  }
+  return null;
+};
+
 let commandArguments = {
   'list': 'lists the files that have been uploaded',
   'reset': 'deletes the cookies and metadata saved from previous launches',
-  'upload': 'upload [filename].png to upload file (must be in project directory). To upload a file split between multiple images e.g. [filename]-3.png just omit the number and the application will auto upload all the files',
-  'download': 'download [filename] to download a file that is in the project directory',
+  'upload': 'upload [filename].png to upload file (must be in the uploads folder). To upload a file split between multiple images e.g. [filename]-3.png just omit the number and the application will auto upload all the files',
+  'download': 'download [filename] to download a file into the project downloads folder',
   'help': 'shows all commands'
 };
-
-let page = null;
-let headers = null;
 
 const main = async () => {
   const myArgs = process.argv.slice(2);
 
-  loadCredentials();
+
+
+  loadCredentials(); // TODO: return credentials then pass in where needed instead of setting them as variables
+  const headers = loadHeadersFromFile();
   const metadata = loadMetaDataFile();
+  // TODO: If the cookies don't exist or have expired then launch normally, if not headless mode should work fine. Alternatively see if launch args can be run minimized
+  const browser = await puppeteer.launch({
+    headless: false,
+    defaultViewport: null,
+  });
+  await browser.close();
+
   
   switch (myArgs[0]) {
     case 'init':
-      await getAllFileMetaData(headers);
+      await getAllFileMetaData(headers); // is this needed?
       break;
     case 'list':
       await listAllAmazonPhotos(metadata);
       break;
     case 'login':
-      // TODO: If the cookies don't exist or have expired then launch normally, if not headless mode should work fine
-      const browser = await puppeteer.launch({
-        headless: false,
-        defaultViewport: null,
-      });
-      const {page, headers} = await setupPage(browser);
-      await browser.close();
+      pageAndHeaders = await setupPage(browser); // TODO: find a better way to get these instance variables
+      headers = pageAndHeaders.headers;
       break;
     case 'reset':
       console.log('to be implemented');
@@ -373,8 +410,15 @@ const main = async () => {
       // await sleep(5000); // manual sleep until I figure out how to continue once the page is done loading
       break;
     case 'download':
-      // download the provided file
-      console.log('to be implemented');
+      let filename = myArgs[1].trim();
+      let file = findMetaDataFileWithFilename(metadata, filename);
+      if (file != null) {
+        mimicDownloadRequest(headers, './downloads/' + filename, file.id, file.ownerId);
+      } else {
+        console.log(file);
+        console.log(filename + " not found. Ensure the filename is correct and contains the correct file extension, or reset the metadata file");
+        // console.log(metadata.data[2][0].name == filename);
+      }
       break;
     case 'help':
       console.log(`Here are the commands available:` + JSON.stringify(commandArguments));
