@@ -1,3 +1,13 @@
+const { Command } = require('commander');
+const program = new Command();
+
+program
+  .option('-d, --download <name.photo.extention>', 'download photos from Amazon via provided filenames')
+  .option('-l, --list', 'list all index photos')
+  .option('-r, --reset', 'use if app is behaving in unexpected ways, removes all app relevant saved data')
+  .option('-u, --upload <name.photo.extention>', 'upload photos via provided filenames')
+  .option('-xd, --delete <name.photo.extention>', 'delete photos on Amazon via provided filenames')
+
 const puppeteer = require('puppeteer');
 const readlineSync = require('readline-sync');
 const fs = require('fs');
@@ -8,10 +18,12 @@ const stream = require('stream');
 const {promisify} = require('util');
 const pipeline = promisify(stream.pipeline);
 const cliProgress = require('cli-progress');
+const logUpdate = require('log-update');
 
 const { exit } = require('process');
 const { time } = require('console');
 const { stringify } = require('querystring');
+const { STATUS_CODES } = require('http');
 
 const AMAZON_SIGNIN_URL = 'https://www.amazon.com/ap/signin';
 const AMAZON_PHOTOS_URL = 'https://www.amazon.com/photos/all';
@@ -60,9 +72,9 @@ const loadCredentials = () => {
 };
 
 const login = async (page, username, password) => {
-  console.log('Logging in...');
   await page.goto(AMAZON_PHOTOS_URL);
   if (isAtLoginScreen(page)) {
+    console.log('Logging in...');
     // login logic
     // email box could be missing if amazon remebers the user
     if (await page.$('[type=email') != null) {
@@ -131,27 +143,66 @@ const login = async (page, username, password) => {
   // await shouldQuit = reader.question()
 };
 
-const uploadPage = async (page, filepath) => {
-  console.log('Starting upload routine');
+const uploadPage = async (page, filepaths) => {
+  console.time('Upload time: ');
   await Promise.all([
     page.click('.toggle', { delay: delayTime() }),
   ]);
 
-  // await sleep(1000)
-  console.log('Waiting for menu to be show');
+  // console.log('Waiting for menu to be shown');
   await page.waitFor('.expandable-nav.add-button.open', { visible: true });
 
-  console.log('Clicking on upload');
+  // console.log('Clicking on upload');
   const [fileChooser] = await Promise.all([
     page.waitForFileChooser(),
     page.click('.upload-files-link', { delay: delayTime() }),
   ]);
+  // console.log('Clicked on the upload button');
 
-  await fileChooser.accept([filepath]);
-
-  console.log('I clicked on the upload button');
-  // TODO: Still need to figure out how to wait for the upload to finish.
+  await fileChooser.accept(filepaths);
+  await sleep(1000);
+  
+  do {
+    logUpdate(await getUploadStatus(page));
+    await sleep(250);
+  } while (await isCurrentlyUploading(page))
+  console.timeEnd('Upload time: ');
 };
+
+const STATUS_DONE = "done";
+
+const getUploadStatus = async (page) => {
+  try {
+    const uploadDiv = await page.$('.queue-text');
+    if (uploadDiv == null) {
+      console.error('did not find ".uploader-complete" nor ".queue-text" meaning browser is neither uploading nor finished with the upload');
+      return STATUS_DONE;
+    }
+    const uploadSpan = await uploadDiv.$('.primary');
+    if (uploadSpan == null) {
+      console.error('found ".queue-text" but could not find its child ".primary"');
+      return STATUS_DONE;
+    }
+    return await uploadSpan.evaluate(node => node.innerText);
+  } catch (error) {
+    console.error(error);
+    return STATUS_DONE;
+  }
+}
+
+const isCurrentlyUploading = async (page) => {
+  if (page.isClosed()) { // TODO: turn this into a listener
+    console.error('page has been closed while in use');
+    return false;
+  }
+  try {
+    const completedUploadSection = await page.$('.uploader-complete');
+    return (completedUploadSection == null);
+  } catch (error) {
+    console.error(error);
+  }
+  return false;
+}
 
 const loadHeaders = (cdpRequestDataRaw) => {
   const headers = {};
@@ -195,11 +246,15 @@ const listAllAmazonPhotos = (metadata) => {
 }
 
 const getAllFileMetaData = async (headers) => {
+  console.time('Indexing time');
   let done = false;
   let numberOfFiles;
   let page = 0;
   const data = [];
+  console.log('Downloading photo metadata from Amazon Photos...');
+  // Write output but don't hide the cursor
   do {
+    logUpdate('Indexing ' + numberOfFiles + ' photos...');
     const payload = await mimicSearchRequest(page, headers);
     data.push(payload.data);
     numberOfFiles = payload.count;
@@ -209,11 +264,11 @@ const getAllFileMetaData = async (headers) => {
     }
   } while (!done);
   fs.writeFileSync('./' + METADATA_FILENAME, JSON.stringify({ data, count: numberOfFiles }, null, 4));
-  console.log(console.timeEnd('metadata'));
+  console.timeEnd('Indexing time');
 };
 
 const mimicSearchRequest = async (page, headers) => {
-  resp = {};
+  let resp = {};
   try {
     let url = 'https://www.amazon.com/drive/v1/search?asset=NONE&filters=type%3A(PHOTOS+OR+VIDEOS)&limit=1&searchContext=customer&sort=%5B%27contentProperties.contentDate+DESC%27%5D&tempLink=false&resourceVersion=V2&ContentType=JSON&_=';
     url += Date.now().toString();
@@ -260,6 +315,50 @@ const mimicDownloadRequest = async (headers, filename, fileId, ownerId) => {
   }
   progressBar.stop();
 };
+
+// Notes on file upload 
+// 1. Make OPTIONS call
+// https://content-na.drive.amazonaws.com/v2/upload?conflictResolution=RENAME&fileSize=16256251&name=DTS_Moodboard_07.jpg&parentNodeId=id9-5WljQjenREkrQ7SSvA
+// authority: content-na.drive.amazonaws.com
+// :method: OPTIONS
+// :path: /v2/upload?conflictResolution=RENAME&fileSize=16256251&name=DTS_Moodboard_07.jpg&parentNodeId=id9-5WljQjenREkrQ7SSvA
+// :scheme: https
+// accept: */*
+// accept-encoding: gzip, deflate, br
+// accept-language: en-US,en;q=0.9
+// access-control-request-headers: x-amz-access-token,x-amzn-file-md5
+// access-control-request-method: POST
+// origin: https://www.amazon.com
+// referer: https://www.amazon.com/
+// sec-fetch-dest: empty
+// sec-fetch-mode: cors
+// sec-fetch-site: cross-site
+// user-agent: M
+//
+// 2. POST
+// https://content-na.drive.amazonaws.com/v2/upload?conflictResolution=RENAME&fileSize=16256251&name=DTS_Moodboard_07.jpg&parentNodeId=id9-5WljQjenREkrQ7SSvA
+// :authority: content-na.drive.amazonaws.com
+// :method: POST
+// :path: /v2/upload?conflictResolution=RENAME&fileSize=16256251&name=DTS_Moodboard_07.jpg&parentNodeId=id9-5WljQjenREkrQ7SSvA
+// :scheme: https
+// accept: application/json, text/plain, */*
+// accept-encoding: gzip, deflate, br
+// accept-language: en-US,en;q=0.9
+// content-length: 16256251
+// content-type: application/x-www-form-urlencoded
+// origin: https://www.amazon.com
+// referer: https://www.amazon.com/
+// sec-fetch-dest: empty
+// sec-fetch-mode: cors
+// sec-fetch-site: cross-site
+// user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 11_1_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/87.0.4280.88 Safari/537.36
+// x-amz-access-token: Atza|IwEBIB9718H8e79ApdXwEI-ErPAU3oCqmDwW8syODA6IyhxuAsRkp5_VQualQQKUl8SKDct1kyHLKN-CJZgZ-V7Xc5bONe7XDcZXghMaFOEl0YiIRP3xiPOpS0W4jABWr2i3knBYUnwzXOOP1Zj6Yr-yBXYghPAmRmJVbF5nRs2WvOeXSwIojyyp1Y0Itwg2ELrs5LpKe41fezIiNWdjSu8qheXcYITkcL1hJQ47flFuHrbf1dpY11zclXaeVev5RuG0oulozVY-TpFx_7I-UH5V8gqRXt4XECOxhz2WWwNUSHcwsj0Jcusw7HjYvvWnj-t34zYl7Ky-PlyxEEl0-z8dWryUk8MMdgDXJUndDjFMYuxVp4ly3rHxzMuHfNfszb8EBos
+// x-amzn-file-md5: d70563d294112662d46c2e9376782564
+// 
+// I don't know where x-amz-access-token comes from, source code might be generating it?
+const mimicUploadRequest = async (headers, filename) => {
+
+}
 
 // download page
 //  "id": "GAbH6DhuT-2amcULxwk9fg",
@@ -376,37 +475,36 @@ let commandArguments = {
 
 const main = async () => {
   const myArgs = process.argv.slice(2);
-
-
-
   loadCredentials(); // TODO: return credentials then pass in where needed instead of setting them as variables
-  const headers = loadHeadersFromFile();
-  const metadata = loadMetaDataFile();
+  let headers = loadHeadersFromFile();
+  let metadata = loadMetaDataFile();
   // TODO: If the cookies don't exist or have expired then launch normally, if not headless mode should work fine. Alternatively see if launch args can be run minimized
   const browser = await puppeteer.launch({
     headless: false,
     defaultViewport: null,
   });
-  await browser.close();
+  let page = null;
 
   
   switch (myArgs[0]) {
-    case 'init':
-      await getAllFileMetaData(headers); // is this needed?
+    case 'init': // is this needed?
+      await getAllFileMetaData(headers); 
       break;
     case 'list':
       await listAllAmazonPhotos(metadata);
-      break;
-    case 'login':
-      pageAndHeaders = await setupPage(browser); // TODO: find a better way to get these instance variables
-      headers = pageAndHeaders.headers;
       break;
     case 'reset':
       console.log('to be implemented');
       break;
     case 'upload':
-      console.log('to be implemented');
-      // await uploadPage(page, './' + myArgs[1]); // TODO: add support for relative filepaths
+      pageAndHeaders = await setupPage(browser); // TODO: find a better way to get these instance variables
+      headers = pageAndHeaders.headers;
+      page = pageAndHeaders.page;
+      let filenames = myArgs.slice(1);
+      filenames.forEach((filename, index, array) => {
+        array[index] = './uploads/' + filename;
+      })
+      await uploadPage(page, filenames); // TODO: add support for relative filepaths
       // await sleep(5000); // manual sleep until I figure out how to continue once the page is done loading
       break;
     case 'download':
@@ -424,23 +522,9 @@ const main = async () => {
       console.log(`Here are the commands available:` + JSON.stringify(commandArguments));
       break;
     default:
-      console.log('Error while parsing commands use help for usage examples')
+      console.log('Error while parsing commands use help for usage examples');
   }
+  await browser.close();
 }
 
-// (async () => {
-//   let headers = fs.readFileSync('./headers.json');
-//   console.log(headers.toString());
-//   headers = JSON.parse(headers.toString());
-//   await getAllFileMetaData(headers);
-// })();
-
 main();
-
-// const [fileChooser] = await Promise.all([
-//   page.waitForFileChooser(),
-//   page.click('#upload-file-button'), // some button that triggers file selection
-// ]);
-// await fileChooser.accept(['/tmp/myfile.pdf']);
-
-// page.click(selector, clickOptions);

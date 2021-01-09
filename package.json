@@ -8,6 +8,7 @@
     "event-stream": "^4.0.1",
     "got": "^11.5.1",
     "jpeg-js": "^0.4.0",
+    "log-update": "^4.0.0",
     "puppeteer": "^4.0.1",
     "readline-sync": "^1.4.10",
     "sharp": "^0.25.2"
