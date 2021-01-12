@@ -1,13 +1,6 @@
 const { Command } = require('commander');
 const program = new Command();
 
-program
-  .option('-d, --download <name.photo.extention>', 'download photos from Amazon via provided filenames')
-  .option('-l, --list', 'list all index photos')
-  .option('-r, --reset', 'use if app is behaving in unexpected ways, removes all app relevant saved data')
-  .option('-u, --upload <name.photo.extention>', 'upload photos via provided filenames')
-  .option('-xd, --delete <name.photo.extention>', 'delete photos on Amazon via provided filenames')
-
 const puppeteer = require('puppeteer');
 const readlineSync = require('readline-sync');
 const fs = require('fs');
@@ -19,6 +12,8 @@ const {promisify} = require('util');
 const pipeline = promisify(stream.pipeline);
 const cliProgress = require('cli-progress');
 const logUpdate = require('log-update');
+const { v4: uuidv4 } = require('uuid');
+
 
 const { exit } = require('process');
 const { time } = require('console');
@@ -29,6 +24,10 @@ const AMAZON_SIGNIN_URL = 'https://www.amazon.com/ap/signin';
 const AMAZON_PHOTOS_URL = 'https://www.amazon.com/photos/all';
 // Requires the file id as $1 and owner id as $2 
 const AMAZON_DOWNLOAD_URL = 'https://www.amazon.com/drive/v1/nodes/$1/contentRedirection?querySuffix=%3Fdownload%3Dtrue&ownerId=$2';
+// URL to request batch downloads
+const AMAZON_BATCH_DOWNLOAD_REQUEST = 'https://www.amazon.com/drive/v1/batchLink';
+// common query params that are used on a couple of network requests during the batch download
+const AMAZON_BATCH_DOWNLOAD_SUFFIX = '?resourceVersion=V2&ContentType=JSON&_='
 
 const INPUT_DELAY_IN_MILLISECONDS = 50;
 
@@ -47,6 +46,9 @@ const sleep = (millis) => new Promise((resolve) => setTimeout(resolve, millis));
 // const delayTime = () => { return 1; }
 const delayTime = () => Math.floor(Math.random() * INPUT_DELAY_IN_MILLISECONDS);
 
+let browser = null;
+let headers = null;
+let metadata = null;
 let username = '';
 let password = '';
 
@@ -141,6 +143,20 @@ const login = async (page, username, password) => {
   }
 
   // await shouldQuit = reader.question()
+};
+
+const doSetup = async () => {
+  pageAndHeaders = await setupPage(browser); // TODO: find a better way to get these instance variables
+  headers = pageAndHeaders.headers;
+  page = pageAndHeaders.page;
+}
+
+const goUpload = async (filenames) => {
+  await doSetup();
+  filenames.forEach((filename, index, array) => {
+    array[index] = './uploads/' + filename;
+  })
+  await uploadPage(page, filenames); // TODO: add support for relative filepaths
 };
 
 const uploadPage = async (page, filepaths) => {
@@ -245,6 +261,18 @@ const listAllAmazonPhotos = (metadata) => {
   console.log("Number of photos: " + metadata.count);
 }
 
+const goReset = async () => {
+  deleteLocalAppFiles();
+  await doSetup();
+  getAllFileMetaData(headers);
+}
+
+const deleteLocalAppFiles = () => {
+  fs.unlinkSync('./' + HEADERS_FILENAME);
+  fs.unlinkSync('./' + METADATA_FILENAME);
+  fs.unlinkSync('./' + COOKIES_FILENAME);
+} 
+
 const getAllFileMetaData = async (headers) => {
   console.time('Indexing time');
   let done = false;
@@ -292,6 +320,16 @@ const initiateDownload = async (page) => {
 
 };
 
+const goDownload = async (args) => {
+  const filesMetadata = findMetaDataForFilenames(metadata, args);
+  if (filesMetadata.length == 1) {
+    await mimicDownloadRequest(headers, './downloads/' + filesMetadata[0].name, filesMetadata[0].id, filesMetadata[0].ownerId);
+  } else if (filesMetadata.length > 1) { // currently assuming all photos in libarary are owners
+    await mimicDownloadBatchRequest(headers, filesMetadata[0].ownerId, 'dev-'+uuidv4()+'.zip', filesMetadata.map(file => file.id));
+  }
+}
+
+// download a single photo
 const mimicDownloadRequest = async (headers, filename, fileId, ownerId) => {
   // console.log('downloading ' + filename);
   let progressBar;
@@ -314,6 +352,167 @@ const mimicDownloadRequest = async (headers, filename, fileId, ownerId) => {
     console.log(error);
   }
   progressBar.stop();
+};
+
+// POST to https://www.amazon.com/drive/v1/batchLink with payload
+// OPTIONS to response url + /content?resourceVersion=V2&ContentType=JSON&_=${TIMESTAMP} if we already know we should perform a GET to the response payload I wonder why this is making an options request?
+// HEAD to to response url + /content?resourceVersion=V2&ContentType=JSON&_=${TIMESTAMP} this head request does NOT provide a filesize so maybe its not needed?
+// GET to response url
+// does a batch request for multiple photos, they are received as a zip. May be a great method to physically differentiate between files that are composed of multiple photos
+const mimicDownloadBatchRequest = async (headers, ownerID, zipname, fileIDs) => {
+  if (ownerID == null) {
+    console.error('no owner id provided');
+  }
+  if (fileIDs.length == 0) {
+    console.error('no file ids provided');
+  }
+  if (zipname == null) {
+    console.error('no zipname provided');
+  }
+  // const a = {headers: {cat: 'meow', wolf: ['bark', 'wrrr']}};
+  // const b = {headers: {cow: 'moo', wolf: ['auuu']}};
+
+  // {...a, ...b}            // => {headers: {cow: 'moo', wolf: ['auuu']}}
+  // got.mergeOptions(a, b)  // => {headers: {cat: 'meow', cow: 'moo', wolf: ['auuu']}}
+
+  // never set target to headers, it will change the original object
+  // Object.assign(target, source);
+
+  const batchRequestHeaders = {
+    'authority': 'www.amazon.com',
+    'origin': 'www.amazon.com',
+    'ect': '4g',
+    'downlink': '10g',
+    'rtt': '50'
+  };
+
+  Object.assign(batchRequestHeaders, headers)
+  console.log(batchRequestHeaders);
+  console.log(generateBatchDownloadRequestPayload(ownerID, fileIDs));
+  // console.log(headers);
+  
+  const currentTimestamp = Date.now();
+  let temporaryBatchDownloadURL = null;
+  // Should respond with a 201 and payload containing download URL
+  try {
+    responseFromGenerateBatchDownloadRequest = await got.post(AMAZON_BATCH_DOWNLOAD_REQUEST, {
+      headers: batchRequestHeaders,
+      json: generateBatchDownloadRequestPayload(ownerID, fileIDs),
+      responseType: 'json'
+    });
+    const responseBody = responseFromGenerateBatchDownloadRequest.body;
+    console.log(responseFromGenerateBatchDownloadRequest.statusCode);
+    console.log(responseBody);
+    if (currentTimestamp > responseBody.expires) {
+      console.error('download link expired ', responseBody.expires);
+      return;
+    }
+    if (responseBody.status != 'AVAILABLE') {
+      console.error('unexpected status in response body', responseBody.status);
+      return;
+    }
+
+    temporaryBatchDownloadURL = responseBody.links.content;
+  } catch (error) {
+    console.error('failed initial batch request');
+    console.error(error);
+    return;
+  }
+
+
+
+  const optionsRequestHeaders = {
+    'authority': 'content-na.drive.amazonaws.com',
+    'accept': '*/*',
+    'accept-encoding': 'gzip, deflate, br',
+    'accept-language': 'en-US,en;q=0.9',
+    'access-control-request-headers': 'accept-language,content-type,x-amzn-sessionid,x-requested-with',
+'access-control-request-method': 'HEAD',
+    'user-agent': headers['user-agent'],
+    'origin': 'https://www.amazon.com',
+    'referer': 'https://www.amazon.com/',
+    'sec-fetch-dest': 'empty',
+    'sec-fetch-mode': 'cors',
+    'sec-fetch-site': 'cross-site'
+  };
+  const headRequestHeaders = {
+    'authority': 'content-na.drive.amazonaws.com',
+    'accept': 'application/json, text/javascript, */*; q=0.01',
+    'accept-language': 'en_US',
+    'content-type': 'application/json',
+    'origin': 'https://www.amazon.com',
+    'referer': 'https://www.amazon.com/',
+    'sec-fetch-dest': 'empty',
+    'sec-fetch-mode': 'cors',
+    'sec-fetch-site': 'cross-site',
+    'x-amzn-sessionid': headers['x-amzn-sessionid'],
+    'user-agent': headers['user-agent'],
+    'x-requested-with': 'XMLHttpRequest'
+  };
+
+  // Might want to do these to not alarm any monitors for abnormal behavior...
+  // try {
+  //   const url = temporaryBatchDownloadURL+AMAZON_BATCH_DOWNLOAD_SUFFIX+currentTimestamp.toString();
+  //   const responseFromOptionsToProvidedURL = await got(url, { headers: optionsRequestHeaders, method: 'OPTIONS' });
+  //   console.log(responseFromOptionsToProvidedURL.statusCode);
+  // } catch (error) {
+  //   // console.error('error while doing OPTIONS batch call');
+  //   console.error(error.options);
+    
+  // }
+
+  // try {
+  //   const url = temporaryBatchDownloadURL+AMAZON_BATCH_DOWNLOAD_SUFFIX+currentTimestamp.toString();
+  //   const responseFromHeadToProvidedURL = await got(url, { headers: headRequestHeaders, method: 'HEAD' });
+  //   console.log(responseFromHeadToProvidedURL.statusCode);
+  // } catch (error) {
+  //   // console.error('error while doing HEAD batch call');
+  //   console.error(error.options);
+    
+  // }
+
+  const batchDownloadHeaders = {
+    'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9',
+    'accept-language': 'en-US,en;q=0.9',
+    'sec-fetch-dest': 'iframe',
+    'sec-fetch-mode': 'navigate',
+    'sec-fetch-site': 'cross-site',
+    'upgrade-insecure-requests': '1',
+    'authority': 'content-na.drive.amazonaws.com',
+    'referer': 'https://www.amazon.com/'
+  };
+
+  let progressBar;
+  try {
+    await pipeline(got.stream(temporaryBatchDownloadURL, {
+          headers: batchDownloadHeaders,
+        }).on('downloadProgress', progress => {
+            // Report download progress
+            if (progressBar == null) {
+              progressBar = makeProgressBar(0, progress.total);
+            }
+            progressBar.update(progress.transferred);
+            progressBar.updateETA();
+      }),
+      fs.createWriteStream('./' + zipname)
+    );
+  } catch (error) {
+    console.log(error.options);
+  }
+  progressBar.stop();
+};
+
+// creates first download request when trying to download multiple files. Assumes that the logged in user is the owner of all files
+const generateBatchDownloadRequestPayload = (ownerID, fileIDs) => {
+  const payload = {
+    nodeIds: [],
+    resourceVersion: 'V2',
+    ContentType: 'JSON'
+  };
+  for (const fileID of fileIDs) {
+    payload.nodeIds.push(ownerID+':'+fileID);
+  }
+  return payload;
 };
 
 // Notes on file upload 
@@ -452,78 +651,90 @@ const loadCookiesFromFileToPage = async (page) => {
   }
 };
 
-const findMetaDataFileWithFilename = (metadata, filename) => {
+const findMetaDataForFilenames = (metadata, filenames) => {
+  const foundFiles = [];
+  // create map of files that we're looking for so the runtime doesn't go vertical
+  const filesToLookFor = new Map();
+  for (const filename of filenames) {
+    filesToLookFor.set(filename, true);
+  }
   console.log('processing ' + metadata.count + ' files...');
   for (const group of metadata.data) {
     for (const file of group) {
-      if (file.name == filename) {
-        console.log('found ' + filename);
-        return file;
+      if (filesToLookFor.has(file.name)) {
+        console.log('found ' + file.name);
+        foundFiles.push(file);
+        if (filenames.length == foundFiles.length) {
+          return foundFiles;
+        }
       }
     }
   }
-  return null;
+  reportFilesNotFound(foundFiles, filenames);
+  return foundFiles;
 };
 
-let commandArguments = {
-  'list': 'lists the files that have been uploaded',
-  'reset': 'deletes the cookies and metadata saved from previous launches',
-  'upload': 'upload [filename].png to upload file (must be in the uploads folder). To upload a file split between multiple images e.g. [filename]-3.png just omit the number and the application will auto upload all the files',
-  'download': 'download [filename] to download a file into the project downloads folder',
-  'help': 'shows all commands'
-};
+const reportFilesNotFound = (foundFiles, filenames) => {
+  for (const filename of filenames) {
+    if (!foundFiles.has(filename)) {
+      console.warn(filename, ' was not found');
+    }
+  }
+}
+
 
 const main = async () => {
-  const myArgs = process.argv.slice(2);
+  // const myArgs = process.argv.slice(2);
   loadCredentials(); // TODO: return credentials then pass in where needed instead of setting them as variables
-  let headers = loadHeadersFromFile();
-  let metadata = loadMetaDataFile();
+  headers = loadHeadersFromFile();
+  metadata = loadMetaDataFile();
   // TODO: If the cookies don't exist or have expired then launch normally, if not headless mode should work fine. Alternatively see if launch args can be run minimized
-  const browser = await puppeteer.launch({
+  browser = await puppeteer.launch({
     headless: false,
     defaultViewport: null,
   });
-  let page = null;
+  // let page = null;
 
+  // program
+  //   .version('0.0.1')
+  //   .arguments('<cmd> [files.ext...]');
+
+  // program
+  //   .command('init', { isDefault: true })
+  //   .description('Refreshes metadata from amazon photos')
+  //   .action(getAllFileMetaData(headers));
+
+  // program
+  //   .command('download <photos...>')
+  //   .description('Download provided photo(s) e.g. <first.photo-extension> <second.photo-extension> more-concrete-example.png ...')
+  //   .action(goDownload);
+
+  // program  
+  //   .command('list')
+  //   .description('Lists all files on cache. Currently no search or pagination support. Cache will be out of date if uploading/deleting of photos happens without using this application')
+  //   .action(listAllAmazonPhotos(metadata));
   
-  switch (myArgs[0]) {
-    case 'init': // is this needed?
-      await getAllFileMetaData(headers); 
-      break;
-    case 'list':
-      await listAllAmazonPhotos(metadata);
-      break;
-    case 'reset':
-      console.log('to be implemented');
-      break;
-    case 'upload':
-      pageAndHeaders = await setupPage(browser); // TODO: find a better way to get these instance variables
-      headers = pageAndHeaders.headers;
-      page = pageAndHeaders.page;
-      let filenames = myArgs.slice(1);
-      filenames.forEach((filename, index, array) => {
-        array[index] = './uploads/' + filename;
-      })
-      await uploadPage(page, filenames); // TODO: add support for relative filepaths
-      // await sleep(5000); // manual sleep until I figure out how to continue once the page is done loading
-      break;
-    case 'download':
-      let filename = myArgs[1].trim();
-      let file = findMetaDataFileWithFilename(metadata, filename);
-      if (file != null) {
-        mimicDownloadRequest(headers, './downloads/' + filename, file.id, file.ownerId);
-      } else {
-        console.log(file);
-        console.log(filename + " not found. Ensure the filename is correct and contains the correct file extension, or reset the metadata file");
-        // console.log(metadata.data[2][0].name == filename);
-      }
-      break;
-    case 'help':
-      console.log(`Here are the commands available:` + JSON.stringify(commandArguments));
-      break;
-    default:
-      console.log('Error while parsing commands use help for usage examples');
-  }
+  // program
+  //   .command('upload <photos...>', 'Upload provided photo(s) e.g. e.g. <first.photo-extension> <second.photo-extension> more-concrete-example.png ...')
+  //   .description('Upload provided photo(s) e.g. <first.photo-extension> <second.photo-extension> more-concrete-example.png ...')
+  //   .action(goUpload);
+
+  program
+    .option('-d, --download <name.photo.extention...>', 'download photos from Amazon via provided filenames')
+    .option('-l, --list', 'lists all files')
+    .option('-r, --reset', 'resets file cache')
+    .option('-u, --upload <name.photo.extention...>', 'upload photos via provided filenames')
+    .option('-xd, --delete <name.photo.extention...>', 'delete photos on Amazon via provided filenames')
+
+  await program.parseAsync(process.argv);
+  const args = program.opts();
+
+  if (program.reset) await goReset();
+  if (program.download) await goDownload(args.download);
+  if (program.list) await listAllAmazonPhotos(metadata);
+  if (program.upload) await goUpload(args.upload);
+  // if (program.delete) TBD
+
   await browser.close();
 }
 

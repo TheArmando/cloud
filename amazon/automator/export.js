@@ -1,10 +1,5 @@
-const puppeteer = require('puppeteer');
-const fs = require('fs');
+// export.js 
+const upload = require('./upload.js');
+const login = require('./login.js');
 
-module.exports = {
-  ...require('./browser.js'),
-  // ...require('../api/download.js'),
-  ...require('./login.js'),
-  // ...require('../api/metadata.js'),
-  ...require('./upload.js'),
-};
+module.exports = Object.assign({}, upload, login);
