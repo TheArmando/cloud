@@ -179,6 +179,7 @@ const convertImages2Files = async (fileName) => {
       } else {
         // See if we should continue, or wait
         // Don't pass the callback, because we're not done yet
+        console.log(`size of blob ${i}`, buffers[i].length);
         ok = writeStream.write(buffers[i]);
       }
       i++;

@@ -5,6 +5,7 @@ credentials.json
 all-metadata.json
 uploads/*
 downloads/*
+images/*
 dev-*
 .*
 !/.gitignore

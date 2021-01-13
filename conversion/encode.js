@@ -15,6 +15,9 @@ const es = require('event-stream');
 const crypto = require('crypto');
 const constants = require('./constants.js');
 
+const { once } = require('events');
+
+
 /**
  * Converts provided file to an image
  * @param {string} fileName
@@ -32,7 +35,7 @@ const convertFiles2Images = async (fileName) => {
   // mapSync doesn't pass in index, so it has to be done manually
   index = 0;
 
-  fs.createReadStream(fileName, { highWaterMark: constants.MAX_FILE_SIZE })
+  const readStream = fs.createReadStream(fileName, { highWaterMark: constants.MAX_FILE_SIZE })
     .pipe(es.mapSync((data) => {
       console.log(data, index);
       convertFile2Image(fileName, data, index);
@@ -44,7 +47,7 @@ const convertFiles2Images = async (fileName) => {
     .on('close', () => {
       console.log('closed');
     });
-  // await p
+  await once(readStream, 'end');
 };
 
 let convertFile2Image = async (fileName, input, index) => {
@@ -138,4 +141,9 @@ const getIntAs2Bytes = (x) => [(x << 16), (x << 24)].map((z) => z >>> 24);
 const getIntAs8Bytes = (x) => {
   const y = Math.floor(x / 2 ** 32);
   return [y, (y << 8), (y << 16), (y << 24), x, (x << 8), (x << 16), (x << 24)].map((z) => z >>> 24);
+};
+
+module.exports = {
+  convertFiles2Images,
+  convertFile2Image
 };
