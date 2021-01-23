@@ -1,6 +1,9 @@
 const API = require('./api/api.js');
 const Automator = require('./automator/automator.js');
 
+const fs = require('fs');
+const HEADERS_FILENAME = 'headers.json';
+
 module.exports = class Amazon {
     constructor(isDebug) {
         this.didInitialization = false;
@@ -8,7 +11,7 @@ module.exports = class Amazon {
         this.headers = loadHeadersFromFile(); // may not need headers saved
         this.automator = new Automator(isDebug);
         if (this.headers != null) {
-            this.api = new API(headers, isDebug);
+            this.api = new API(this.headers, isDebug);
         }
     }
 
@@ -17,6 +20,10 @@ module.exports = class Amazon {
         this.api = new API(this.automator.getHeaders());
         this.didInitialization = true;
     }
+
+    findAllPhotosWithFilename(filename) {
+        this.api.findAllPhotosWithFilename(filename, (placeholder) => console.log(placeholder));
+    };
 
     async uploadPhotos(...photopaths) {
         if (!this.didInitialization) {
@@ -29,7 +36,7 @@ module.exports = class Amazon {
         if (!this.didInitialization) {
             await this.init();
         }
-        await this.api.downloadPhotosWithFilenames(photonames);
+        await this.api.downloadPhotosWithPhotonames(photonames);
     }
 
     async resetMetadata(progressCallback) {

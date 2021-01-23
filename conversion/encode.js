@@ -63,8 +63,7 @@ const convertFileToImages = async (filepath, callback, logger) => {
   const readStream = fs.createReadStream(filepath, { highWaterMark: constants.MAX_FILE_SIZE })
     .pipe(es.mapSync((data) => {
       convertFileToImage(filepath, data, index, logger);
-      index++;
-      callback(index);
+      callback(index++);
     }))
     .on('error', (err) => {
       logger.error('error while reading file.', err);

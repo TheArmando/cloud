@@ -148,7 +148,7 @@ module.exports = class Authentication {
         console.error('unanticipated error');
       }
       console.log('Waiting for manual override');
-      continue;
+      // continue;
     }
     let alertBox = await this.page.$('#auth-error-message-box');
     if (alertBox != null) {

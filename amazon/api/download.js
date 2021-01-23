@@ -23,7 +23,7 @@ const fetch = async (headers, filename, fileId, ownerId, downloadStatusCallback)
     }).on('downloadProgress', progress => {
         downloadStatusCallback(progress);
     }),
-        fs.createWriteStream('./'+filename)
+        fs.createWriteStream('./downloads/'+filename)
     );
 }
 

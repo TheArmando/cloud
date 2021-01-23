@@ -9,15 +9,25 @@ module.exports = class AmazonAPI {
         this.metadata = new Metadata(headers, isDebug);
     }
 
-    async downloadPhotoWithFilename(filename, downloadProgressCallback) {
-        await download.fetch(headers, filename, fileId, ownderId, downloadProgressCallback);
+    // TODO: include number of photos instead of guessing
+    findAllPhotosWithFilename(filename, searchProgressCallback) {
+        photonames = [];
+        for (let i = 0; i < 10; i++) {
+            photonames.push(filename + '-' + i + '.png');
+        }
+        photosFound = this.metadata.findMetaDataForFilenames(photonames, searchProgressCallback);
+        return photosFound.map(photo => photo.name);
     }
 
-    async downloadPhotosWithFilenames(filenames, downloadProgressCallback) {
-        if (filenames.length == 0) {
+    async downloadPhotoWithPhotoname(photoname, downloadProgressCallback) {
+        await download.fetch(headers, photoname, fileId, ownderId, downloadProgressCallback);
+    }
+
+    async downloadPhotosWithPhotonames(photonames, downloadProgressCallback) {
+        if (photonames.length == 0) {
             // todo: throw error?
-        } else if (filenames.length == 1) {
-            await this.downloadPhotoWithFilename(filenames[0], downloadProgressCallback);
+        } else if (photonames.length == 1) {
+            await this.downloadPhotoWithPhotoname(photonames[0], downloadProgressCallback);
         } else {
             await download.fetchBatch();
         }
