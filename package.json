@@ -13,7 +13,8 @@
     "puppeteer": "^4.0.1",
     "readline-sync": "^1.4.10",
     "sharp": "^0.25.2",
-    "uuid": "^8.3.2"
+    "uuid": "^8.3.2",
+    "winston": "^3.3.3"
   },
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^4.10.0",

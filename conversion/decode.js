@@ -3,34 +3,84 @@ const fs = require('fs');
 const buffer = require('buffer');
 const es = require('event-stream');
 const crypto = require('crypto');
-// import { once } from 'events';
+const path = require("path");
 const { once } = require('events');
 
 const constants = require('./constants.js');
 
+const { createLogger, format, transports } = require('winston');
+const { combine, timestamp, label, prettyPrint } = format;
+const logger = createLogger({
+  level: 'info',
+  format: combine(
+    // label({ label:  }),
+    timestamp(),
+    prettyPrint(),
+  ),
+  defaultMeta: { service: 'decode' },
+  transports: [
+    //
+    // - Write all logs with level `error` and below to `error.log`
+    // - Write all logs with level `info` and below to `combined.log`
+    //
+    new transports.File({ filename: 'dev-error.log', level: 'error' }),
+    new transports.File({ filename: 'dev-combined.log' }),
+  ],
+});
+
 // TODO: check to see if the destination file already exists to prevent overwrite
-const convertImages2Files = async (fileName) => {
-  fileNames = fileName2fileNames(fileName);
+const convertImagesToFile = async (imagepaths, filepath) => {
+  if (!exists(filepath) || !allImagesExist(imagepaths) || !allImagesHaveValidNames(imagepaths)) { return; }
+  await convertImagesToFileWithFilename(imagepaths, filepath, determineFilename(imagepaths));
+};
+
+const allImagesExist = (imagepaths) => {
+  for (imagepath of imagepaths) {
+    if (!exists(imagepath)) {
+      logger.error({
+        'image does not exist': imagepath,
+      });
+      return false;
+    }
+  }
+  return true;
+};
+
+const exists = (path) => { return fs.existsSync(path) };
+
+const allImagesHaveValidNames = (imagepaths) => {
+  const firstImageName = path.basename(imagepaths[0], '.png');
+  for (imagepath of imagepaths) {
+    if (firstImageName != path.basename(imagepath, '.png').slice(0, -2)) { // e.g. my-og-filename.mp4-0.png
+      return false;
+    }
+  }
+  return true;
+};
+
+const determineFilename = (imagepaths) => {
+  const imagenameWithIndex = path.basename(imagepaths[0], '.png');
+  const indexOfDelimeter = imagenameWithIndex.lastIndexOf('-');
+  return imagenameWithIndex.slice(0, indexOfDelimeter);
+};
+
+const determineIndex = (imagepath) => {
+  const imagenameWithIndex = path.basename(imagepath, '.png');
+  const indexOfDelimeter = imagenameWithIndex.lastIndexOf('-');
+  return imagenameWithIndex.slice(indexOfDelimeter+1);
+}
+
+const convertImagesToFileWithFilename = async (imagepaths, filepath, filename) => {
   buffers = [];
-  const writeStream = fs.createWriteStream(`./decoded-${fileNames[0].substring(0, fileNames[0].length - 6)}`);
-  await once(writeStream, 'open');
-  // for (fileName of fileNames) {
-  //   buffer = await convertImage2File(fileName)
-  // }
-
-  // this assumes that filenames are provided in order, which may not be true
-  await Promise.all(fileNames.map(async (fileName, index) => {
-    // buffer = await convertImage2File(fileName)
-
-    buffers[index] = await convertImage2File(fileName);
-    // const input = await fs.readFile(fileName)
-    // buffers[index] = input
+  await Promise.all(imagepaths.map(async (imagepath, index) => {
+    buffers[index] = await convertImage2File(imagepath, logger.child({ filename }));
   }));
-  // for (buffer of buffers) {
-  // }
+  await createFile(filepath, filename, buffers);
+};
 
-  console.log('length of buffers: ', buffers.length);
-  console.log('done converting now saving the file');
+const createFile = async (filepath, filename, buffers) => {
+  const writeStream = fs.createWriteStream(filepath + filename);
+  await once(writeStream, 'open');
   let i = 0;
   const write = async () => {
     let ok = true;
@@ -41,7 +91,7 @@ const convertImages2Files = async (fileName) => {
       } else {
         // See if we should continue, or wait
         // Don't pass the callback, because we're not done yet
-        console.log(`size of blob ${i}`, buffers[i].length);
+        logger.info(`size of blob ${i}`, buffers[i].length);
         ok = writeStream.write(buffers[i]);
       }
       i++;
@@ -53,83 +103,72 @@ const convertImages2Files = async (fileName) => {
     }
   };
   await write();
-  console.log('done saving file');
-  // write();
-  //   function write() {
-  //     let ok = true;
-  //     do {
-  //       i--;
-  //       if (i === 0) {
-  //         // Last time!
-  //         writer.write(data, encoding, callback);
-  //       } else {
-  //         // See if we should continue, or wait.
-  //         // Don't pass the callback, because we're not done yet.
-  //         ok = writer.write(data, encoding);
-  //       }
-  //     } while (i > 0 && ok);
-  //     if (i > 0) {
-  //       // Had to stop early!
-  //       // Write some more once it drains.
-  //       writer.once('drain', write);
-  //     }
-  //   }
 };
 
-const fileName2fileNames = (fileName) => {
-  let i = 0;
-  fileNames = [];
-  while (fs.existsSync(`./${fileName}-${i}.png`)) {
-    // console.log(fileName + '-' + i + '.png')
-    fileNames.push(`${fileName}-${i}.png`);
-    i++;
+let convertImage2File = async (imagepath, logger) => {
+  logger = logger.child({ imagepath });
+  const { err, data, info } = await loadImage(imagepath);
+  if (err != null) {
+    logger.error(err);
+    return;
   }
-  console.log('filenames to decode', fileNames);
-  return fileNames;
-  // if (fs.existsSync('./fileName')) {
-  //   console.log('The path exists.');
-  // }
-};
 
-let convertImage2File = async (fileName) => {
-  const { err, data, info } = await sharp(fileName)
-    .raw()
-    .toBuffer({ resolveWithObject: true });
-
-  console.log(data.length);
-  console.log(data);
-
+  logger.info('parsing embedded metadata');
   o = new Uint8Array(constants.TOTAL_PADDING_SIZE);
   for (i = 0; i < constants.TOTAL_PADDING_SIZE + 1; i++) {
     o[i] = data[data.length - constants.TOTAL_PADDING_SIZE + i];
   }
-  console.log(o);
+
   const originalFileSize = intFromBytes(o.slice(0, constants.BYTES_HOLDING_FILE_SIZE));
   const fileIndex = intFromBytes(o.slice(constants.BYTES_HOLDING_FILE_SIZE, constants.BYTES_HOLDING_FILE_SIZE + constants.BYTES_HOLDING_FILE_INDEX));
-  // const CHECK_SUM = intFromBytes(o.slice(constants.BYTES_HOLDING_FILE_SIZE + constants.BYTES_HOLDING_FILE_INDEX, constants.BYTES_HOLDING_FILE_SIZE + constants.BYTES_HOLDING_FILE_INDEX + constants.BYTES_HOLDING_CHECKSUM));
-  const checksum = o.slice(constants.BYTES_HOLDING_FILE_SIZE + constants.BYTES_HOLDING_FILE_INDEX, constants.BYTES_HOLDING_FILE_SIZE + constants.BYTES_HOLDING_FILE_INDEX + constants.BYTES_HOLDING_CHECKSUM);
-  // TODO: slicing this information doesn't properly set the length variable, thus the buffer must be written within the scope of this function. otherwise the file is written to fs with the additional metadata appended to the end
+  const checksumAsUint8Array = o.slice(constants.BYTES_HOLDING_FILE_SIZE + constants.BYTES_HOLDING_FILE_INDEX, constants.BYTES_HOLDING_FILE_SIZE + constants.BYTES_HOLDING_FILE_INDEX + constants.BYTES_HOLDING_CHECKSUM);
+  const embeddedChecksum = Buffer.from(checksumAsUint8Array).toString('hex');
   const actualData = data.slice(0, originalFileSize);
   
-  console.log('actual size: ', originalFileSize, actualData.length);
-  console.log('width: ', info.width, ' height: ', info.height);
-  console.log('checksum', checksum);
+  logger = logger.child({
+    'image': {
+      'size': data.length,
+      'width': info.width,
+      'length': info.length,
+    },
+    'file': {
+      'size': actualData.length,
+      'metadata': {
+        'original': o,
+        'parsed': {
+          'checksum': embeddedChecksum,
+          'size': originalFileSize,
+          'index': fileIndex,
+        }
+      }, 
+    }
+  });
 
-  const actualDataChecksum = crypto.createHash('sha256').update(actualData).digest();
-  const embeddedChecksum = crypto.createHash('sha256').update(checksum).digest();
+  if (originalFileSize != actualData.length) {
+    logger.error({ 'actual file size': actualData.length });
+  }
+  const actualDataChecksum = crypto.createHash('sha256').update(actualData).digest('hex');
   if (actualDataChecksum != embeddedChecksum) {
-    console.log('discrepency detected with checksum');
-    console.log('expected checksum: ', embeddedChecksum);
-    console.log('actual checksum: ', actualDataChecksum);
+    logger.error({ 'actual checksum': actualDataChecksum });
+  }
+  const imageIndex = determineIndex(imagepath);
+  if (imageIndex!= fileIndex) {
+    logger.error({ 'image index from image name': imageIndex });
   }
 
+  logger.info('conversion of image finished');
   return actualData;
+};
 
-  // fs.writeFileSync(fileName.substring(0, fileName.length-4), data, { encoding: null })
+const loadImage = (imagepath) => {
+  return sharp(imagepath)
+    .raw()
+    .toBuffer({ resolveWithObject: true });
 };
 
 const intFromBytes = (byteArr) => byteArr.reduce((a, c, i) => a + c * 2 ** (56 - i * 8), 0);
 
 module.exports = {
-  convertImages2Files
+  convertImagesToFile,
+  convertImagesToFileWithFilename
 };
