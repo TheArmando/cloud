@@ -39,8 +39,8 @@ const goDownload = async (files) => {
         await app.amazon.init();
     }
     for (file of files) {
-        photos = app.amazon.findAllPhotosWithFilename(files);
-        await app.amazon.downloadPhotos(photos);
+        // photos = app.amazon.findAllPhotosWithFilename(files);
+        await app.amazon.downloadPhotos(file);
         photopaths = photos.map(photo => './downloads/'+photo);
         await decoder.convertImagesToFileWithFilename(photopaths, './downloads/'+file)
     }

@@ -17,27 +17,7 @@ const constants = require('./constants.js');
 
 const { once } = require('events');
 
-const { createLogger, format, transports } = require('winston');
-const { combine, timestamp, label, prettyPrint } = format;
-const logger = createLogger({
-  level: 'info',
-  format: combine(
-    // label({ label:  }),
-    timestamp(),
-    prettyPrint(),
-  ),
-  defaultMeta: { service: 'encoder' },
-  transports: [
-    //
-    // - Write all logs with level `error` and below to `error.log`
-    // - Write all logs with level `info` and below to `combined.log`
-    //
-    new transports.File({ filename: 'dev-error.log', level: 'error' }),
-    new transports.File({ filename: 'dev-combined.log' }),
-  ],
-});
-
-const convertFilesToImages = async (filepaths, callback) => {
+const convertFilesToImages = async (filepaths, logger, callback) => {
   if (filepaths.length == 0) {
     return;
   }
@@ -57,7 +37,7 @@ const convertFilesToImages = async (filepaths, callback) => {
  */
 const convertFileToImages = async (filepath, callback, logger) => {
   logger = logger.child({ filepath });
-  const profiler = logger.startTimer();
+  logger.timeStart(filepath);
   // mapSync doesn't pass in index, so it has to be done manually
   index = 0;
   const readStream = fs.createReadStream(filepath, { highWaterMark: constants.MAX_FILE_SIZE })
@@ -72,7 +52,7 @@ const convertFileToImages = async (filepath, callback, logger) => {
       logger.info('file read stream closed');
     });
   await once(readStream, 'end');
-  profiler.done();
+  logger.timeEnd(filepath);
 };
 
 const convertFileToImage = async (fileName, input, index, logger) => {

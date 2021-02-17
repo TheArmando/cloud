@@ -1,62 +1,60 @@
-const METADATA_FILENAME = 'all-metadata.json';
 const AMAZON_SEARCH_URL = 'https://www.amazon.com/drive/v1/search?asset=NONE&filters=type%3A(PHOTOS+OR+VIDEOS)&limit=1&searchContext=customer&sort=%5B%27contentProperties.contentDate+DESC%27%5D&tempLink=false&resourceVersion=V2&ContentType=JSON&_=';
 
+const util = require('../util.js');
 module.exports = class Metadata {
-	constructor(headers, isDebug) {
-		this.headers = headers;
-		this.isDebug = isDebug;
-		this.metadata = loadMetaDataFile();
+	constructor(logger) {
+		this.logger = logger;
+		this.metadata = util.loadMetadata();
 	}
 
 	/**
 	 * Retrieves metadata for all the photos in the account
 	 * This data is used to show what files are available and to easily download or delete specific files
-	 * @param {*} progressCallback optional callback for the function to report the number of photos it has pulled metadata on
+	 * @param {*} callback optional callback for the function to report the number of photos it has pulled metadata on
 	 */
-	async fetchAllFileMetaData(progressCallback) {
-		console.time('Indexing time');
-		if (progressCallback == null) {
-			progressCallback = () => {};
-		}
-		let done = false;
+	async fetchAllFileMetaData(callback) {
+		if (callback == null) { callback = () => {}; }
+		const timestampLabel = 'metadata.fetchAllFileMetaData';
+		this.logger.timeStart(timestampLabel);
 		let numberOfFiles;
 		let page = 0;
 		const data = [];
 		do {
-			progressCallback(numberOfFiles);
+			callback(numberOfFiles);
 			const payload = await this.#mimicSearchRequest(page);
 			data.push(payload.data);
 			numberOfFiles = payload.count;
 			page += 1;
+			// TODO: investigate whether this conditional break causes an erreonous search call (or at the very least a duplicate api call)
+			// this repeats a query with the expectation that eventually the number of results will be 0
+			// the reason the search request is repeated is because there is a hard limit on the result set, this causing the need for a page count
+			// it stands to reason that you have already reached the last page when the number of results is less than the max results
 			if (payload.data.length == 0) {
-				done = true;
+				break;
 			}
-		} while (!done);
-		fs.writeFileSync('./' + METADATA_FILENAME, JSON.stringify({ data, count: numberOfFiles }, null, 4));
+		} while (true); // TODO: infinite loops are bad
+		util.writeMetadata({ data, count: numberOfFiles })
 		this.metadata = data;
-		console.timeEnd('Indexing time');
+		this.logger.timeEnd(timestampLabel);
 	};
 
 	findMetaDataForFilenames(filenames, progressCallback) {
-		const foundFilesWithMetadata = {};
-		for (const filename of filenames) {
-			foundFilesWithMetadata[filename] = null;
-		}
-		foundFilesWithMetadata.count = 0;
+		const timestampLabel = 'metadata.findMetaDataForFilenames';
+		this.logger.timeStart(timestampLabel);
+		const filesFound = {};
 		progressCallback([0, this.metadata.count, null]);
 		for (const group of this.metadata.data) {
 			for (const file of group) {
-				if (foundFilesWithMetadata.hasOwnProperty(file.name)) {
-					foundFilesWithMetadata[file.name] = file;
-					foundFilesWithMetadata += 1;
-					if (filenames.length == foundFilesWithMetadata.count) {
-						return foundFilesWithMetadata;
+				if (filesFound.hasOwnProperty(file.name)) {
+					filesFound[file.name] = file;
+					if (filenames.length == filesFound.entries().length) {
+						return filesFound;
 					}
 				}
 			}
 		}
-		reportFilesNotFound(foundFilesWithMetadata, filenames);
-		return foundFilesWithMetadata;
+		this.logger.timeEnd(timestampLabel);
+		return filesFound;
 	};
 
 	/**
@@ -64,7 +62,6 @@ module.exports = class Metadata {
 	 * @param {Object} page sets how far from the beginning of the photos list to pull from. Since we can only get 200 photos at a time
 	 */
 	async #mimicSearchRequest(page) {
-		let resp = {};
 		try {
 			let url = AMAZON_SEARCH_URL;
 			url += Date.now().toString();
@@ -72,34 +69,25 @@ module.exports = class Metadata {
 			if (page > 0) {
 				url = url.replace('&tempLink=false', `&tempLink=false&offset=${200 * page}`);
 			}
-			resp = await got.get(url, {
+			return await got.get(url, {
 				headers: this.headers
 			}).json();
-		} catch (error) {
-			console.log(error.response);
-			resp = error;
+		} catch (ex) {
+			this.logger.error(ex.response);
+			return ex;
 		}
-		if (this.isDebug) {
-			fs.writeFileSync('./dev-captured-response-' + page + '.json', JSON.stringify(resp));
-		}
-		return resp;
 	};
 
-	
-}
-
-const reportFilesNotFound = (foundFiles, filenames) => {
-	for (const filename of filenames) {
-		if (foundFiles[filename] == null) {
-			console.warn(filename, ' was not found');
+	#reportFilesNotFound(filenames, foundFiles) {
+		for (const filename of filenames) {
+			if (foundFiles[filename] == null) {
+				this.logger.warn(`${filename} was not found`);
+			}
 		}
 	}
-}
 
-const loadMetaDataFile = () => {
-	if (fs.existsSync('./' + METADATA_FILENAME)) {
-	  return JSON.parse(fs.readFileSync('./' + METADATA_FILENAME, { encoding: 'utf8' }));
-	} else {
-	  console.log('local metadata file not found');
+	setHeaders(headers) {
+		this.headers = headers;
 	}
-  }
+
+}

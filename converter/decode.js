@@ -3,50 +3,36 @@ const fs = require('fs');
 const buffer = require('buffer');
 const es = require('event-stream');
 const crypto = require('crypto');
-const path = require("path");
-const { once } = require('events');
+const path = require('path');
+const {
+  once,
+} = require('events');
 
 const constants = require('./constants.js');
 
-const { createLogger, format, transports } = require('winston');
-const { combine, timestamp, label, prettyPrint } = format;
-const logger = createLogger({
-  level: 'info',
-  format: combine(
-    // label({ label:  }),
-    timestamp(),
-    prettyPrint(),
-  ),
-  defaultMeta: { service: 'decode' },
-  transports: [
-    //
-    // - Write all logs with level `error` and below to `error.log`
-    // - Write all logs with level `info` and below to `combined.log`
-    //
-    new transports.File({ filename: 'dev-error.log', level: 'error' }),
-    new transports.File({ filename: 'dev-combined.log' }),
-  ],
-});
-
 // TODO: check to see if the destination file already exists to prevent overwrite
-const convertImagesToFile = async (imagepaths, filepath) => {
-  if (!exists(filepath) || !allImagesExist(imagepaths) || !allImagesHaveValidNames(imagepaths)) { return; }
-  await convertImagesToFileWithFilename(imagepaths, filepath, determineFilename(imagepaths));
+const convertImagesToFile = async (imagepaths, filepath, logger) => {
+  if (!exists(filepath) || !allImagesExist(imagepaths) || !allImagesHaveValidNames(imagepaths)) {
+    return;
+  }
+  await convertImagesToFileWithFilename(imagepaths, filepath, determineFilename(imagepaths), logger);
 };
 
 const allImagesExist = (imagepaths) => {
   for (imagepath of imagepaths) {
     if (!exists(imagepath)) {
-      logger.error({
-        'image does not exist': imagepath,
-      });
+      // logger.error({
+      //   'image does not exist': imagepath,
+      // });
       return false;
     }
   }
   return true;
 };
 
-const exists = (path) => { return fs.existsSync(path) };
+const exists = (path) => {
+  return fs.existsSync(path)
+};
 
 const allImagesHaveValidNames = (imagepaths) => {
   const firstImageName = path.basename(imagepaths[0], '.png');
@@ -67,18 +53,21 @@ const determineFilename = (imagepaths) => {
 const determineIndex = (imagepath) => {
   const imagenameWithIndex = path.basename(imagepath, '.png');
   const indexOfDelimeter = imagenameWithIndex.lastIndexOf('-');
-  return imagenameWithIndex.slice(indexOfDelimeter+1);
+  return imagenameWithIndex.slice(indexOfDelimeter + 1);
 }
 
-const convertImagesToFileWithFilename = async (imagepaths, filepath, filename) => {
-  buffers = [];
+const convertImagesToFileWithFilename = async (imagepaths, filepath, filename, logger) => {
+  const buffers = [];
+  const childLogger = logger.child({
+    filename,
+  });
   await Promise.all(imagepaths.map(async (imagepath, index) => {
-    buffers[index] = await convertImage2File(imagepath, logger.child({ filename }));
+    buffers[index] = await convertImage2File(imagepath, childLogger);
   }));
-  await createFile(filepath, filename, buffers);
+  await createFile(filepath, filename, buffers, childLogger);
 };
 
-const createFile = async (filepath, filename, buffers) => {
+const createFile = async (filepath, filename, buffers, logger) => {
   const writeStream = fs.createWriteStream(filepath + filename);
   await once(writeStream, 'open');
   let i = 0;
@@ -106,8 +95,14 @@ const createFile = async (filepath, filename, buffers) => {
 };
 
 let convertImage2File = async (imagepath, logger) => {
-  logger = logger.child({ imagepath });
-  const { err, data, info } = await loadImage(imagepath);
+  logger = logger.child({
+    imagepath
+  });
+  const {
+    err,
+    data,
+    info
+  } = await loadImage(imagepath);
   if (err != null) {
     logger.error(err);
     return;
@@ -124,7 +119,7 @@ let convertImage2File = async (imagepath, logger) => {
   const checksumAsUint8Array = o.slice(constants.BYTES_HOLDING_FILE_SIZE + constants.BYTES_HOLDING_FILE_INDEX, constants.BYTES_HOLDING_FILE_SIZE + constants.BYTES_HOLDING_FILE_INDEX + constants.BYTES_HOLDING_CHECKSUM);
   const embeddedChecksum = Buffer.from(checksumAsUint8Array).toString('hex');
   const actualData = data.slice(0, originalFileSize);
-  
+
   logger = logger.child({
     'image': {
       'size': data.length,
@@ -140,20 +135,26 @@ let convertImage2File = async (imagepath, logger) => {
           'size': originalFileSize,
           'index': fileIndex,
         }
-      }, 
+      },
     }
   });
 
   if (originalFileSize != actualData.length) {
-    logger.error({ 'actual file size': actualData.length });
+    logger.error({
+      'actual file size': actualData.length
+    });
   }
   const actualDataChecksum = crypto.createHash('sha256').update(actualData).digest('hex');
   if (actualDataChecksum != embeddedChecksum) {
-    logger.error({ 'actual checksum': actualDataChecksum });
+    logger.error({
+      'actual checksum': actualDataChecksum
+    });
   }
   const imageIndex = determineIndex(imagepath);
-  if (imageIndex!= fileIndex) {
-    logger.error({ 'image index from image name': imageIndex });
+  if (imageIndex != fileIndex) {
+    logger.error({
+      'image index from image name': imageIndex
+    });
   }
 
   logger.info('conversion of image finished');
@@ -163,7 +164,9 @@ let convertImage2File = async (imagepath, logger) => {
 const loadImage = (imagepath) => {
   return sharp(imagepath)
     .raw()
-    .toBuffer({ resolveWithObject: true });
+    .toBuffer({
+      resolveWithObject: true
+    });
 };
 
 const intFromBytes = (byteArr) => byteArr.reduce((a, c, i) => a + c * 2 ** (56 - i * 8), 0);

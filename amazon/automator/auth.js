@@ -7,45 +7,13 @@ const EMAIL_ATTRIBUTE = '[type=email]';
 const PASSWORD_ATTRIBUTE = '[type=password]';
 const LOGIN_ATTRIBUTE = '[type=submit]';
 
-const COOKIES_FILENAME = 'cookies.json';
-const HEADERS_FILENAME = 'headers.json';
-const DEBUG_DIR = './debug/'
-const SCREENSHOT_FILENAME = 'screenshot.png';
-
-const ONE_SECOND_IN_MS = 1000;
-
 const isAtLoginScreen = (url) => url.startsWith(AMAZON_SIGNIN_URL);
 const isAtPhotosScreen = (url) => url.startsWith(AMAZON_PHOTOS_URL);
 
-const sleep = (millis) => new Promise((resolve) => setTimeout(resolve, millis));
-
-const INPUT_DELAY_IN_MILLISECONDS = 50;
-const delayTime = () => Math.floor(Math.random() * INPUT_DELAY_IN_MILLISECONDS);
-
-// TODO: might move this somewhere else
-const loadCredentials = () => {
-  if (fs.existsSync('./' + CREDENTIALS_FILENAME)) {
-    const data = JSON.parse(fs.readFileSync('./' + CREDENTIALS_FILENAME, { encoding: 'utf8' }));
-    if (!username || !password) {
-      console.log('No credentials found - set credentials and rerun the application');
-      exit(1);
-    }    
-    return {
-      username: data.username,
-      password: data.password
-    }
-  } else {
-    const data = JSON.stringify({ username: '', password: '' });
-    fs.writeFileSync('./' + CREDENTIALS_FILENAME, data);
-    console.log('No credentials found - set credentials and rerun the application');
-    exit(1);
-  }
-};
-
 module.exports = class Authentication {
-  constructor(page, isDebug) {
+  constructor(page, logger) {
     this.page = page;
-    this.isDebug = isDebug;
+    this.logger = logger.child({ module: 'automator.auth' })
     this.didInitialization = false;
     this.credentials = loadCredentials();
   }
@@ -80,10 +48,7 @@ module.exports = class Authentication {
         }
       }
     }
-    if (this.isDebug) {
-      console.log('headers', this.headers);
-    }
-    fs.writeFileSync('./' + HEADERS_FILENAME, JSON.stringify(headers, null, 4));
+    this.logger.info('headers', this.headers);
     return this.headers;
   }
 
@@ -114,11 +79,11 @@ module.exports = class Authentication {
         await this.#checkForWarningMessage();
         await sleep(ONE_SECOND_IN_MS);
         if (Date().now() - timeWhenLoginStarted > 10 * ONE_SECOND_IN_MS) {
-          console.log(`${10} seconds elapsed since submitting login information`);
+          this.logger.info(`${10} seconds elapsed since submitting login information`);
         }
       }
     } else {
-      console.warn('login procedure was skipped, youre probably already logged in');
+      this.logger.info('login procedure was skipped, youre probably already logged in');
     }
   }
 
@@ -139,20 +104,20 @@ module.exports = class Authentication {
       // TODO: refactor into function that parses error messages from the page elements
     let warningBox = await this.page.$('#auth-warning-message-box')
     if (warningBox != null) {
-      console.log('found warning box');
+      this.logger.warn('found warning box');
       warningMessage = await warningBox.$('.a-list-item')
       // TODO: When capture the captcha image so the browser can run in headless mode
+      // TODO: refactor innerText to report back the actual error text
       if (warningMessage.evaluate(node => node.innerText.startsWith('To better protect your account, please re-enter your password'))) {
-        console.warn('Captcha challenge required...');
+        this.logger.warn('captcha challenge required...');
       } else {
-        console.error('unanticipated error');
+        this.logger.error('unanticipated error');
       }
-      console.log('Waiting for manual override');
-      // continue;
+      this.logger.warn('waiting for manual override');
     }
     let alertBox = await this.page.$('#auth-error-message-box');
     if (alertBox != null) {
-      console.log('Error detected...');
+      this.logger.error('found alert box');
     }
     // const captcha = reareadlineSyncder.question("Input Captcha: ");
     // if (captcha.toLowerCase() === 'quit') {
@@ -178,11 +143,11 @@ module.exports = class Authentication {
         //   await this.page.setCookie(cookie);
         // }
       } catch (error) {
-        console.log(error);
-        exit(1);
+        this.logger.error(error);
+        exit(1); // TODO: remove system exit
       }
     } else {
-      console.log('previous cookies not found...');
+      this.logger.warn('previous cookies not found');
     }
   };
 

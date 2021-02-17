@@ -1,18 +1,16 @@
 const API = require('./api/api.js');
 const Automator = require('./automator/automator.js');
 
-const fs = require('fs');
-const HEADERS_FILENAME = 'headers.json';
+const util = require('./util.js');
 
 module.exports = class Amazon {
-    constructor(isDebug) {
+    constructor(logger) {
         this.didInitialization = false;
-        this.isDebug = isDebug;
-        this.headers = loadHeadersFromFile(); // may not need headers saved
+        this.logger = logger;
+        // TODO: find out if headers even need to be saved to file and subsequently loaded during startup
+        this.headers = util.loadHeaders();
         this.automator = new Automator(isDebug);
-        if (this.headers != null) {
-            this.api = new API(this.headers, isDebug);
-        }
+        this.api = new API(logger);
     }
 
     async init() {
@@ -21,7 +19,7 @@ module.exports = class Amazon {
         this.didInitialization = true;
     }
 
-    findAllPhotosWithFilename(filename) {
+    findAllPhotosWithFilename(filename) { // TODO: fix this shit
         this.api.findAllPhotosWithFilename(filename, (placeholder) => console.log(placeholder));
     };
 
@@ -43,11 +41,4 @@ module.exports = class Amazon {
         await downloadNewPhotoMetadata(progressCallback);
     }
 
-}
-
-// TODO: either move this to auth or pull the header write to fs code out of auth to here
-const loadHeadersFromFile = () => {
-    if (fs.existsSync('./' + HEADERS_FILENAME)) {
-      return JSON.parse(fs.readFileSync('./' + HEADERS_FILENAME, { encoding: 'utf8'} ));
-    }
 }

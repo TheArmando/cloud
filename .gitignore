@@ -3,6 +3,7 @@ headers.json
 cookies.json
 credentials.json
 all-metadata.json
+runtime/*
 uploads/*
 downloads/*
 images/*
