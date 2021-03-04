@@ -8,7 +8,7 @@ const { decode } = require('jpeg-js');
 
 const app = {};
 
-const main = async () => {
+(async () => {
     program
         .option('-d, --download <name.photo.extention...>', 'download photos from Amazon via provided filenames')
         .option('-l, --list', 'lists all files')
@@ -18,18 +18,18 @@ const main = async () => {
         .option('-s --safe-mode', 'used for development')
     
     await program.parseAsync(process.argv);
-    const args = program.opts();
+    const parameters = program.opts();
 
     app.safe = (program.s ? true : false);
     app.amazon = new Amazon(app.safe);
 
     if (program.reset) await goReset();
-    if (program.download) await goDownload(args.download);
+    if (program.download) await goDownload(parameters.download);
     if (program.list) await listAllPhotos();
-    if (program.upload) await goUpload(args.upload);
+    if (program.upload) await goUpload(parameters.upload);
     // if (program.delete) TBD
 
-}
+});
 
 
 const goReset = async () => {};
@@ -65,5 +65,3 @@ const goUpload = async (files) => {
     
     await app.amazon.uploadPhotos(photopaths);
 };
-
-main();

@@ -2,6 +2,7 @@ const fs = require('fs');
 const encode = require('./encode.js');
 const decode = require('./decode.js');
 const buffer = require('buffer');
+const MockLogger = require('../logger/logger.mock.js');
 
 beforeEach(() => {
     makeTestFile();
@@ -27,29 +28,17 @@ const removeTestFile = () => {
 }
 
 // TODO: switch to mocking as defined in the jest documentation
-class mockLogger {
-    constructor() {}
-    child(options) {
-        return new mockLogger()
-    }
-    error(...params) {}
-    info(...params) {}
-    startTimer() {
-        return {
-            done: () => {},
-        };
-    }
-}
+
 
 test('convert file to image and back again', async () => {
     const targetFilename = 'dev-decoded-test-file.txt';
     const targetFilepath = testDir + targetFilename;
 
-    let logger = new mockLogger();
+    const mockLogger = new MockLogger();
 
     // TODO: change callback to jest mock and assert expected calls
-    await encode.convertFilesToImages([testFilepath], logger, i => console.log(i));
-    await decode.convertImagesToFileWithFilename([testFilepath + '-0.png'], './', targetFilename, logger);
+    await encode.convertFilesToImages([testFilepath], mockLogger, i => console.log(i));
+    await decode.convertImagesToFileWithFilename([testFilepath + '-0.png'], './', targetFilename, mockLogger);
 
     const decodedFile = fs.readFileSync(targetFilepath, {
         encoding: 'utf8',

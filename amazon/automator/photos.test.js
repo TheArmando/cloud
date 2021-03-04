@@ -1,6 +1,15 @@
 const Photos = require('./photos.js');
 
 test('upload a single photo', async () => {
+    const mockedLogger = {
+        child: jest.fn().mockImplementation(() => {
+            return mockedLogger;
+        }),
+        error: jest.fn().mockReturnValue(null),
+        timeStart: jest.fn().mockReturnValue(null),
+        timeEnd: jest.fn().mockReturnValue(null),
+    };
+
     const mockedFileChooser = {
             accept: jest.fn().mockResolvedValue(null),
     };
@@ -8,7 +17,7 @@ test('upload a single photo', async () => {
     const mockedEvalPrimary = jest.fn().mockImplementation(() => {
         return {
             evaluate: jest.fn().mockResolvedValue(null),
-        }
+        };
     });
     const mockedEvalQueueText = jest.fn().mockImplementation(() => {
         return {
@@ -27,7 +36,7 @@ test('upload a single photo', async () => {
     };
 
 
-    const photos = new Photos(mockedPage, true);
+    const photos = new Photos(mockedPage, mockedLogger);
     const mockCallback = jest.fn();
 
     await photos.upload('./test.png', mockCallback);

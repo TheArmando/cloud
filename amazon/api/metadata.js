@@ -21,7 +21,7 @@ module.exports = class Metadata {
 		const data = [];
 		do {
 			callback(numberOfFiles);
-			const payload = await this.#mimicSearchRequest(page);
+			const payload = await this.mimicSearchRequest(page);
 			data.push(payload.data);
 			numberOfFiles = payload.count;
 			page += 1;
@@ -36,7 +36,7 @@ module.exports = class Metadata {
 		util.writeMetadata({ data, count: numberOfFiles })
 		this.metadata = data;
 		this.logger.timeEnd(timestampLabel);
-	};
+	}
 
 	findMetaDataForFilenames(filenames, progressCallback) {
 		const timestampLabel = 'metadata.findMetaDataForFilenames';
@@ -55,13 +55,13 @@ module.exports = class Metadata {
 		}
 		this.logger.timeEnd(timestampLabel);
 		return filesFound;
-	};
+	}
 
 	/**
 	 * Constructs and executes a GET call to search Amazon's Photo API
 	 * @param {Object} page sets how far from the beginning of the photos list to pull from. Since we can only get 200 photos at a time
 	 */
-	async #mimicSearchRequest(page) {
+	async mimicSearchRequest(page) {
 		try {
 			let url = AMAZON_SEARCH_URL;
 			url += Date.now().toString();
@@ -76,9 +76,9 @@ module.exports = class Metadata {
 			this.logger.error(ex.response);
 			return ex;
 		}
-	};
+	}
 
-	#reportFilesNotFound(filenames, foundFiles) {
+	reportFilesNotFound(filenames, foundFiles) {
 		for (const filename of filenames) {
 			if (foundFiles[filename] == null) {
 				this.logger.warn(`${filename} was not found`);
@@ -90,4 +90,4 @@ module.exports = class Metadata {
 		this.headers = headers;
 	}
 
-}
+};

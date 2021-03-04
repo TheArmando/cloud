@@ -80,5 +80,5 @@ exports.writeHeaders = (headers) => {
 };
 
 exports.writeMetadata = (metadata) => {
-  fs.writeFileSync(METADATA_FILEPATH, JSON.stringify(metadata, null, 4))
+  fs.writeFileSync(METADATA_FILEPATH, JSON.stringify(metadata, null, 4));
 }

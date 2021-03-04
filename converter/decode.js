@@ -31,7 +31,7 @@ const allImagesExist = (imagepaths) => {
 };
 
 const exists = (path) => {
-  return fs.existsSync(path)
+  return fs.existsSync(path);
 };
 
 const allImagesHaveValidNames = (imagepaths) => {

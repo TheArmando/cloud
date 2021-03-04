@@ -9,17 +9,14 @@ module.exports = class AmazonAPI {
         this.metadata = new Metadata(headers, logger);
     }
 
-    // TODO: include number of photos instead of guessing
-    findAllPhotosWithFilename(filename, searchProgressCallback) {
+    findAllPhotosWithFilename(filename, numberOfPhotos, searchProgressCallback) {
         photonames = [];
-        for (let i = 0; i < 10; i++) {
+        for (let i = 0; i < numberOfPhotos; i++) {
             photonames.push(filename + '-' + i + '.png');
         }
         photosFound = this.metadata.findMetaDataForFilenames(photonames, searchProgressCallback);
         return photosFound.map(photo => photo.name);
     }
-
-    // #binaryGuess
 
     async downloadPhotoWithPhotoname(photoname, downloadProgressCallback) {
         await download.fetch(headers, photoname, fileId, ownderId, downloadProgressCallback);

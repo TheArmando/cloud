@@ -20,14 +20,14 @@ module.exports = class Photos {
     if (!isAtPhotosScreen(this.page.url)) {
       await this.page.goto(AMAZON_PHOTOS_URL);
     }
-    logger.timeStart('upload');
-    await this.#navigateToUploadView();
-    await this.#openFileChooserAndSubmitFiles(filepaths);
+    this.logger.timeStart('upload');
+    await this.navigateToUploadView();
+    await this.openFileChooserAndSubmitFiles(filepaths);
     do {
       // logUpdate(await this.getUploadStatus());
       statusCallback(await this.getUploadStatus());
     } while (await this.isCurrentlyUploading());
-    logger.timeEnd('upload');
+    this.logger.timeEnd('upload');
   }
 
   async isCurrentlyUploading() {
@@ -63,14 +63,14 @@ module.exports = class Photos {
     return STATUS_DONE;
   }
 
-  async #navigateToUploadView() {
+  async navigateToUploadView() {
     await Promise.all([
       this.page.click('.toggle', { delay: delayTime( )}),
     ]);
     await this.page.waitFor('.expandable-nav.add-button.open', { visible: true });
   }
 
-  async #openFileChooserAndSubmitFiles(filepaths) {
+  async openFileChooserAndSubmitFiles(filepaths) {
     const [fileChooser] = await Promise.all([
       this.page.waitForFileChooser(),
       this.page.click('.upload-files-link', { delay: delayTime() }),

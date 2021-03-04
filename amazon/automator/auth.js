@@ -28,9 +28,9 @@ module.exports = class Authentication {
   }
 
   async init() {
-    await this.#loadCookiesFromFile();
+    await this.loadCookiesFromFile();
     // Setup request interception to required authentication data like session id and cookies
-    this.cdpRequestDataRaw = await this.#setupLoggingOfAllNetworkData();
+    this.cdpRequestDataRaw = await this.setupLoggingOfAllNetworkData();
     this.didInitialization = true;
   }
 
@@ -72,11 +72,11 @@ module.exports = class Authentication {
     }
     if (!(await this.isLoggedIn())) {
       const timeWhenLoginStarted = Date.now();
-      await this.#fillCredentialsAndLogin(this.credentials.username, this.credentials.password);
+      await this.fillCredentialsAndLogin(this.credentials.username, this.credentials.password);
       // TODO: if debug flag is on?
       // continuallyTakeScreenshots()
       while (!isAtPhotosScreen(this.page.url)) {
-        await this.#checkForWarningMessage();
+        await this.checkForWarningMessage();
         await sleep(ONE_SECOND_IN_MS);
         if (Date().now() - timeWhenLoginStarted > 10 * ONE_SECOND_IN_MS) {
           this.logger.info(`${10} seconds elapsed since submitting login information`);
@@ -87,7 +87,7 @@ module.exports = class Authentication {
     }
   }
 
-  async #fillCredentialsAndLogin(username, password) {
+  async fillCredentialsAndLogin(username, password) {
     // check if email text box is on page. could be missing if amazon remembers the user
     if (await this.page.$(EMAIL_ATTRIBUTE) != null) {
       await this.page.type(EMAIL_ATTRIBUTE, username, { delay: delayTime() });
@@ -98,14 +98,14 @@ module.exports = class Authentication {
       this.page.waitForNavigation(),
       this.page.click(LOGIN_ATTRIBUTE, { delay: delayTime() }),
     ]);
-  };
+  }
 
-  async #checkForWarningMessage() {
+  async checkForWarningMessage() {
       // TODO: refactor into function that parses error messages from the page elements
-    let warningBox = await this.page.$('#auth-warning-message-box')
+    let warningBox = await this.page.$('auth-warning-message-box');
     if (warningBox != null) {
       this.logger.warn('found warning box');
-      warningMessage = await warningBox.$('.a-list-item')
+      warningMessage = await warningBox.$('.a-list-item');
       // TODO: When capture the captcha image so the browser can run in headless mode
       // TODO: refactor innerText to report back the actual error text
       if (warningMessage.evaluate(node => node.innerText.startsWith('To better protect your account, please re-enter your password'))) {
@@ -115,7 +115,7 @@ module.exports = class Authentication {
       }
       this.logger.warn('waiting for manual override');
     }
-    let alertBox = await this.page.$('#auth-error-message-box');
+    let alertBox = await this.page.$('auth-error-message-box');
     if (alertBox != null) {
       this.logger.error('found alert box');
     }
@@ -134,7 +134,7 @@ module.exports = class Authentication {
     // <button class="upload-files-link"><span class="label">Upload photos</span><span>Add photos and videos</span></button>
   }
 
-  async #loadCookiesFromFile() {
+  async loadCookiesFromFile() {
     if (fs.existsSync('./' + COOKIES_FILENAME)) {
       try {
         const cookies = JSON.parse(fs.readFileSync('./' + COOKIES_FILENAME));
@@ -156,7 +156,7 @@ module.exports = class Authentication {
    * @param {Object} cdpRequestDataRaw returned from setupLoggingOfAllNetworkData(...)
    *
    */
-  async #setupLoggingOfAllNetworkData() {
+  async setupLoggingOfAllNetworkData() {
     const cdpSession = await this.page.target().createCDPSession();
     await cdpSession.send('Network.enable');
     const cdpRequestDataRaw = {};

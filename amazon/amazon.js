@@ -19,10 +19,6 @@ module.exports = class Amazon {
         this.didInitialization = true;
     }
 
-    findAllPhotosWithFilename(filename) { // TODO: fix this shit
-        this.api.findAllPhotosWithFilename(filename, (placeholder) => console.log(placeholder));
-    };
-
     async uploadPhotos(...photopaths) {
         if (!this.didInitialization) {
             await this.init();

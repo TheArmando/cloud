@@ -8,7 +8,7 @@ const AMAZON_DOWNLOAD_URL = 'https://www.amazon.com/drive/v1/nodes/$1/contentRed
 // URL to request batch downloads
 const AMAZON_BATCH_DOWNLOAD_REQUEST = 'https://www.amazon.com/drive/v1/batchLink';
 // common query params that are used on a couple of network requests during the batch download
-const AMAZON_BATCH_DOWNLOAD_SUFFIX = '?resourceVersion=V2&ContentType=JSON&_='
+const AMAZON_BATCH_DOWNLOAD_SUFFIX = '?resourceVersion=V2&ContentType=JSON&_=';
 
 const generateDownloadLink = (fileId, ownerId) => {
     let specificDownloadUrl = AMAZON_DOWNLOAD_URL.replace('$1', fileId);
@@ -132,7 +132,7 @@ const doMiscellaneousRequests = async (headers) => {
       // console.error('error while doing HEAD batch call');
       console.error(error.options);
     }
-}
+};
 
 const downloadZip = async (url, zipname, downloadStatusCallback) => {
     const batchDownloadHeaders = {
@@ -155,7 +155,7 @@ const downloadZip = async (url, zipname, downloadStatusCallback) => {
         console.log(error.options);
       }
   
-}
+};
 
 module.exports = {
   fetch,

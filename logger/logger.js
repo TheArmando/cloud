@@ -2,7 +2,7 @@ const { createLogger, format, transports } = require('winston');
 const { combine, timestamp, label, prettyPrint } = format;
 
 const WORKING_DIR = './runtime';
-const LOG_FILE_EXTENSION = '.log'
+const LOG_FILE_EXTENSION = '.log';
 
 module.exports = class Logger {
     constructor(isDebug) {

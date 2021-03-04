@@ -28,7 +28,6 @@ const convertFilesToImages = async (filepaths, logger, callback) => {
       await convertFileToImages(filepath, callback, logger);
     }));
   }
-
 };
 
 /**
