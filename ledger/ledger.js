@@ -4,13 +4,15 @@
  */
 
 const fs = require('fs');
+const {createHash} = require('crypto');
+const path = require('path');
 
 // TODO: pass this from a configuration file
 const LEDGER_WORKING_DIRECTORY = './';
 const LEDGER_FILE_NAME = 'dev-ledger.json'; 
 const LEDGER_FILE_PATH = LEDGER_WORKING_DIRECTORY + LEDGER_FILE_NAME;
 
-// const recordEntry = () => {};
+const ERROR_NO_ACTIVE_FILE = 'no filename provided. use select(...) to set a file';
 
 class Ledger {
     constructor(logger) {
@@ -20,16 +22,23 @@ class Ledger {
 
     hasActiveRecord() { return this.current != null; }
 
-    hasUploaded() {
-        return this.hasActiveRecord() && this.ledger[this.current].upload != null;
-    }
+    hasConversions() { return this.hasActiveRecord() && this.ledger[this.current].conversion != null; }
+
+    // hasUploaded(filename) {
+    //     return this.hasActiveRecord() && this.ledger[this.current].upload != null;
+    // }
 
     loadLedger() {
         if (fs.existsSync(LEDGER_FILE_PATH)) {
-            return fs.readFileSync(LEDGER_FILE_PATH);
+            this.ledger = JSON.parse(fs.readFileSync(LEDGER_FILE_PATH));
         }
         this.logger.warn('creating new ledger file', LEDGER_FILE_PATH);
         fs.writeFileSync(LEDGER_FILE_PATH, {}, 'utf8');
+        this.ledger = {};
+    }
+
+    getConversions() {
+        if (this.hasActiveRecord() && this.hasConversions()) { return this.ledger[this.current].conversion; }
         return {};
     }
 
@@ -42,12 +51,28 @@ class Ledger {
         } 
     }
 
-    // recordConversion(...newFile) { 
-    //     previousConversion = this.ledger[this.current].conversion;
-    //     if (!previousConversion) { previousConversion = {};  }
-    //     previousConversion.
-    // }
+    recordConversion(newFilepath) {
+        if (this.hasActiveRecord()) { throw ERROR_NO_ACTIVE_FILE; }
+        if (!this.hasConversions()) { this.ledger[this.current].conversion = []; }
+        previousConversion = this.ledger[this.current].conversion;
+        const newFile = {
+            filename: path.basename(newFilepath),
+            sha256: computeSHA256(newFilepath),
+        };
+        // previousConversion.push(newFile);
+        this.commitEntry();
+    }
 
-    // recordUpload(...transfer) {}
-    
+    commitLedger() {
+        fs.writeFileSync(LEDGER_FILE_PATH, this.ledger, 'utf8');
+    }
+
 }
+
+// credit: https://stackoverflow.com/a/55223767
+const computeSHA256 = (filepath) => {
+    const hash = createHash('sha256');
+    const file = fs.readFileSync(filepath, { encoding: 'utf8' });
+    hash.write(file);
+    return hash.digest('base64'); // returns hash as string
+};

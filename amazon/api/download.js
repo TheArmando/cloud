@@ -84,6 +84,7 @@ const generateRequestBodyForZipArchive = (fileAndOwnerIds) => {
   };
 
 const doMiscellaneousRequests = async (headers) => {
+  // Amazon Photos UI does an OPTIONS request before making calls to their backend service 
     const optionsRequestHeaders = {
         'authority': 'content-na.drive.amazonaws.com',
         'accept': '*/*',

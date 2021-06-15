@@ -1,4 +1,5 @@
 const fs = require('fs');
+const util = require('../util.js');
 
 const AMAZON_SIGNIN_URL = 'https://www.amazon.com/ap/signin';
 const AMAZON_PHOTOS_URL = 'https://www.amazon.com/photos/all';
@@ -13,15 +14,15 @@ const isAtPhotosScreen = (url) => url.startsWith(AMAZON_PHOTOS_URL);
 module.exports = class Authentication {
   constructor(page, logger) {
     this.page = page;
-    this.logger = logger.child({ module: 'automator.auth' })
+    this.logger = logger.child({ module: 'automator.auth' });
     this.didInitialization = false;
-    this.credentials = loadCredentials();
+    this.credentials = util.loadCredentials();
   }
 
   // if not logged in amazon should redirect us to the login page after attempting to navigate to the photos page
   async isLoggedIn() {
     await this.page.goto(AMAZON_PHOTOS_URL);
-    if (isAtPhotosScreen(this.page.url)) {
+    if (isAtPhotosScreen(this.page.url())) {
       return true;
     }
     return false;
@@ -75,10 +76,10 @@ module.exports = class Authentication {
       await this.fillCredentialsAndLogin(this.credentials.username, this.credentials.password);
       // TODO: if debug flag is on?
       // continuallyTakeScreenshots()
-      while (!isAtPhotosScreen(this.page.url)) {
+      while (!isAtPhotosScreen(this.page.url())) {
         await this.checkForWarningMessage();
-        await sleep(ONE_SECOND_IN_MS);
-        if (Date().now() - timeWhenLoginStarted > 10 * ONE_SECOND_IN_MS) {
+        await util.sleep(util.ONE_SECOND_IN_MS);
+        if (Date.now() - timeWhenLoginStarted > 10 * util.ONE_SECOND_IN_MS) {
           this.logger.info(`${10} seconds elapsed since submitting login information`);
         }
       }
@@ -90,13 +91,13 @@ module.exports = class Authentication {
   async fillCredentialsAndLogin(username, password) {
     // check if email text box is on page. could be missing if amazon remembers the user
     if (await this.page.$(EMAIL_ATTRIBUTE) != null) {
-      await this.page.type(EMAIL_ATTRIBUTE, username, { delay: delayTime() });
+      await this.page.type(EMAIL_ATTRIBUTE, username, { delay: util.delayTime() });
     }
   
-    await this.page.type(PASSWORD_ATTRIBUTE, password, { delay: delayTime() });
+    await this.page.type(PASSWORD_ATTRIBUTE, password, { delay: util.delayTime() });
     await Promise.all([
       this.page.waitForNavigation(),
-      this.page.click(LOGIN_ATTRIBUTE, { delay: delayTime() }),
+      this.page.click(LOGIN_ATTRIBUTE, { delay: util.delayTime() }),
     ]);
   }
 
@@ -135,21 +136,27 @@ module.exports = class Authentication {
   }
 
   async loadCookiesFromFile() {
-    if (fs.existsSync('./' + COOKIES_FILENAME)) {
-      try {
-        const cookies = JSON.parse(fs.readFileSync('./' + COOKIES_FILENAME));
-        await this.page.setCookies(...cookies);
-        // for (const cookie of cookies) { // setting the cookies individually seems to make puppeteer happy
-        //   await this.page.setCookie(cookie);
-        // }
-      } catch (error) {
-        this.logger.error(error);
-        exit(1); // TODO: remove system exit
-      }
+    const cookies = util.loadCookies();
+    if (cookies != null) {
+      await this.page.setCookies(...cookies);
     } else {
-      this.logger.warn('previous cookies not found');
+      this.logger.warn('previous session cookies not found');
     }
-  };
+    // if (fs.existsSync('./' + COOKIES_FILENAME)) {
+    //   try {
+    //     const cookies = JSON.parse(fs.readFileSync('./' + COOKIES_FILENAME));
+    //     await this.page.setCookies(...cookies);
+    //     // for (const cookie of cookies) { // setting the cookies individually seems to make puppeteer happy
+    //     //   await this.page.setCookie(cookie);
+    //     // }
+    //   } catch (error) {
+    //     this.logger.error(error);
+    //     exit(1); // TODO: remove system exit
+    //   }
+    // } else {
+    //   this.logger.warn('previous cookies not found');
+    // }
+  }
 
   /**
    * Returns an object representing the headers that were used to query Amazon's photos API
@@ -172,4 +179,4 @@ module.exports = class Authentication {
     addCDPRequestDataListener('Network.responseReceivedExtraInfo');
     return cdpRequestDataRaw;
   }
-}
+};

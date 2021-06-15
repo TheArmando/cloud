@@ -28,6 +28,9 @@
     "lint": "eslint ./ --fix",
     "test": "jest"
   },
+  "jest": {
+    "testTimeout": 10000
+  },
   "author": "",
   "license": "ISC"
 }

@@ -1,25 +1,27 @@
 const puppeteer = require('puppeteer');
 const fs = require('fs');
-const { Authentication } = require('./auth.js');
-const { Photos } = require('./photos.js');
+const Authentication = require('./auth.js');
+const Photos = require('./photos.js');
 module.exports = class Automator {
-  constructor(isDebug) {
+  constructor(logger, isDebug) {
+    this.logger = logger;
     this.isDebug = isDebug;
     this.didInitialization = false;
   }
 
   async init() {
     this.browser = await puppeteer.launch({
-      headless: !isDebug,
+      headless: !this.isDebug,
       defaultViewport: null,
     });
+    
     const pages = await this.browser.pages();
     this.page = pages[0];
 
-    this.auth = new Authentication(page, this.isDebug);
+    this.auth = new Authentication(this.page, this.logger);
     await this.auth.init();
 
-    this.photos = new Photos(page, this.isDebug);
+    this.photos = new Photos(this.page, this.logger);
     this.didInitialization = true;
   }
 
@@ -39,4 +41,4 @@ module.exports = class Automator {
     await this.photos.upload(...filenames);
   }
 
-}
+};

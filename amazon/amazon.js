@@ -9,7 +9,7 @@ module.exports = class Amazon {
         this.logger = logger;
         // TODO: find out if headers even need to be saved to file and subsequently loaded during startup
         this.headers = util.loadHeaders();
-        this.automator = new Automator(isDebug);
+        this.automator = new Automator(logger);
         this.api = new API(logger);
     }
 
@@ -34,7 +34,7 @@ module.exports = class Amazon {
     }
 
     async resetMetadata(progressCallback) {
-        await downloadNewPhotoMetadata(progressCallback);
+        await this.api.downloadNewPhotoMetadata(progressCallback);
     }
 
-}
+};

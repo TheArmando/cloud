@@ -2,9 +2,10 @@ const { Command } = require('commander');
 const program = new Command();
 
 const Amazon = require('./amazon/amazon.js');
-const encoder = require('./conversion/encode.js');
-const decoder = require('./conversion/decode.js');
+const encoder = require('./converter/encode.js');
+const decoder = require('./converter/decode.js');
 const { decode } = require('jpeg-js');
+const Logger = require('./logger/logger.js');
 
 const app = {};
 
@@ -15,13 +16,14 @@ const app = {};
         .option('-r, --reset', 'resets file cache')
         .option('-u, --upload <name.photo.extention...>', 'upload photos via provided filenames')
         .option('-xd, --delete <name.photo.extention...>', 'delete photos on Amazon via provided filenames')
-        .option('-s --safe-mode', 'used for development')
+        .option('-s --safe-mode', 'used for development'); 
     
     await program.parseAsync(process.argv);
     const parameters = program.opts();
 
     app.safe = (program.s ? true : false);
-    app.amazon = new Amazon(app.safe);
+    app.logger = new Logger(app.safe);
+    app.amazon = new Amazon(app.logger);
 
     if (program.reset) await goReset();
     if (program.download) await goDownload(parameters.download);
@@ -29,20 +31,22 @@ const app = {};
     if (program.upload) await goUpload(parameters.upload);
     // if (program.delete) TBD
 
-});
+})();
 
-
-const goReset = async () => {};
+const goReset = async () => {
+    // await app.amazon.resetMetadata((x) => console.log(x));
+    // console.log('done reset');
+};
 
 const goDownload = async (files) => {
     if (app.safe) {
         await app.amazon.init();
     }
-    for (file of files) {
+    for (let file of files) {
         // photos = app.amazon.findAllPhotosWithFilename(files);
         await app.amazon.downloadPhotos(file);
         photopaths = photos.map(photo => './downloads/'+photo);
-        await decoder.convertImagesToFileWithFilename(photopaths, './downloads/'+file)
+        await decoder.convertImagesToFileWithFilename(photopaths, './downloads/'+file);
     }
 };
 
@@ -53,8 +57,8 @@ const goUpload = async (files) => {
         await app.amazon.init();
     }
     const filePaths = files.map(filepath => './uploads/'+filepath);
-    const indices = {}
-    for (file of files) {
+    const indices = {};
+    for (let file of files) {
         indices[file] = 0;
         await encoder.convertFilesToImages(filePaths, (i) => indices[file] = i);
         const photopaths = [];
