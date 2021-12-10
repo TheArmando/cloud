@@ -1,3 +1,6 @@
+/**
+ * This util file is for general use functions and constants along with most operations involving the filesystem that are used across this module
+ */
 const fs = require('fs');
 
 const RUNTIME_DIRECTORY = `${__dirname}/../runtime/amazon/`;
@@ -22,7 +25,11 @@ exports.loadCookies = () => {
   }
 };
 
-// move to automator?
+exports.saveCookies = (gimmeTheCookies) => {
+  fs.writeFileSync('./' + COOKIES_FILENAME, JSON.stringify(gimmeTheCookies, null, 4));
+};
+
+// TODO: move to automator?
 exports.loadCredentials = () => {
   if (this.fileExists(CREDENTIALS_FILEPATH)) {
     const credentials = this.parseFile(CREDENTIALS_FILEPATH);
@@ -74,7 +81,7 @@ const initializeCredentialsFile = () => {
 
 exports.sleep = (millis) => new Promise((resolve) => setTimeout(resolve, millis));
 
-// move to amazon.js?
+// TODO: move to amazon.js?
 exports.writeHeaders = (headers) => {
   fs.writeFileSync(HEADERS_FILEPATH, JSON.stringify(headers, null, 4));
 };

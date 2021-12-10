@@ -20,6 +20,7 @@ module.exports = class Automator {
 
     this.auth = new Authentication(this.page, this.logger);
     await this.auth.init();
+    await this.auth.login();
 
     this.photos = new Photos(this.page, this.logger);
     this.didInitialization = true;

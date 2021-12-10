@@ -13,11 +13,12 @@ const STATUS_DONE = "done";
 module.exports = class Photos {
   constructor(page, logger) {
     this.page = page;
-    this.logger = logger.child({ module: 'automator.photos' });
+    this.logger = logger
+    // this.logger = logger.child({ module: 'automator.photos' }); This broke the timeStart() function
   }
 
   async upload(filepaths, statusCallback) {
-    if (!isAtPhotosScreen(this.page.url)) {
+    if (!isAtPhotosScreen(this.page.url())) {
       await this.page.goto(AMAZON_PHOTOS_URL);
     }
     this.logger.timeStart('upload');

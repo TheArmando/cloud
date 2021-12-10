@@ -33,6 +33,7 @@ const app = {};
 
 })();
 
+// TODO: 
 const goReset = async () => {
     // await app.amazon.resetMetadata((x) => console.log(x));
     // console.log('done reset');
@@ -40,7 +41,7 @@ const goReset = async () => {
 
 const goDownload = async (files) => {
     if (app.safe) {
-        await app.amazon.init();
+        await app.amazon.init(); // ???? wtf
     }
     for (let file of files) {
         // photos = app.amazon.findAllPhotosWithFilename(files);
@@ -50,6 +51,7 @@ const goDownload = async (files) => {
     }
 };
 
+// TODO: 
 const listAllPhotos = async () => {};
 
 const goUpload = async (files) => {

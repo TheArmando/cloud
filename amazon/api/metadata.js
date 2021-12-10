@@ -1,9 +1,11 @@
 const AMAZON_SEARCH_URL = 'https://www.amazon.com/drive/v1/search?asset=NONE&filters=type%3A(PHOTOS+OR+VIDEOS)&limit=1&searchContext=customer&sort=%5B%27contentProperties.contentDate+DESC%27%5D&tempLink=false&resourceVersion=V2&ContentType=JSON&_=';
 
+const got = require('got');
 const util = require('../util.js');
 module.exports = class Metadata {
-	constructor(logger) {
+	constructor(logger, headers) {
 		this.logger = logger;
+		this.headers = headers;
 		this.metadata = util.loadMetadata();
 	}
 
@@ -69,11 +71,12 @@ module.exports = class Metadata {
 			if (page > 0) {
 				url = url.replace('&tempLink=false', `&tempLink=false&offset=${200 * page}`);
 			}
+			this.logger.info(url);
 			return await got.get(url, {
 				headers: this.headers
 			}).json();
 		} catch (ex) {
-			this.logger.error(ex.response);
+			this.logger.error(ex);
 			return ex;
 		}
 	}

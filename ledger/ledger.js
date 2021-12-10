@@ -1,3 +1,4 @@
+// This was a dumb idea, just use a database
 /**
  * Keeps records of file to photo conversions to help with photo retrieval and conversion back to files
  * current runs syncronously handling one file at a time. This should be rewritten around an async so that multiple files can be handled at a given time

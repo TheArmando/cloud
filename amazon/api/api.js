@@ -3,10 +3,10 @@ const download = require('./download.js');
 const Metadata = require('./metadata.js');
 
 module.exports = class AmazonAPI {
-    constructor(headers, logger) {
-        this.headers = headers;
+    constructor(logger, headers) {
         this.logger = logger;
-        this.metadata = new Metadata(headers, logger);
+        this.headers = headers;
+        this.metadata = new Metadata(logger, headers);
     }
 
     findAllPhotosWithFilename(filename, numberOfPhotos, searchProgressCallback) {

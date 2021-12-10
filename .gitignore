@@ -1,4 +1,4 @@
-/node_modules
+**/node_modules
 headers.json
 cookies.json
 credentials.json
