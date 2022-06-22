@@ -7,7 +7,7 @@
     "cli-progress": "^3.8.2",
     "commander": "^6.2.1",
     "event-stream": "^4.0.1",
-    "got": "^11.5.1",
+    "got": "^11.8.5",
     "jpeg-js": "^0.4.0",
     "log-update": "^4.0.0",
     "puppeteer": "^4.0.1",
